@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -12,10 +12,14 @@ import '@xyflow/react/dist/style.css';
 
 import { useFlowStore } from '@/store/useFlowStore';
 import AgentNode from './AgentNode';
+import DepartmentNode from './DepartmentNode';
 import AgentModal from './AgentModal';
+import DepartmentDetailModal from './DepartmentDetailModal';
+import { getCurrentCompany } from '@/lib/companyStorage';
 
 const nodeTypes = {
   agentNode: AgentNode,
+  departmentNode: DepartmentNode,
 };
 
 export default function FlowCanvas() {
@@ -27,7 +31,19 @@ export default function FlowCanvas() {
     onConnect,
     openModal,
     loadTemplate,
+    loadDepartmentNodes,
   } = useFlowStore();
+
+  // Load department nodes when component mounts if company exists
+  useEffect(() => {
+    const company = getCurrentCompany();
+    if (company && company.departments.length > 0) {
+      console.log('Loading department nodes, found', company.departments.length, 'departments');
+      loadDepartmentNodes();
+    } else {
+      console.log('No company or departments found');
+    }
+  }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -42,71 +58,34 @@ export default function FlowCanvas() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
           onDragOver={onDragOver}
           nodeTypes={nodeTypes}
+          nodesConnectable={false}
+          connectOnClick={false}
           fitView
-          className="bg-gray-50"
+          className="bg-[#F0EFEA]"
         >
-          <Background />
+          <Background color="#828179" gap={16} size={1} />
           <Controls />
           <MiniMap
             nodeColor={(node) => {
               switch (node.data.type) {
                 case 'intake':
-                  return '#93c5fd';
+                  return '#CC785C';
                 case 'processing':
-                  return '#d8b4fe';
+                  return '#828179';
                 case 'response':
-                  return '#86efac';
+                  return '#CC785C';
                 default:
-                  return '#e5e7eb';
+                  return '#828179';
               }
             }}
           />
-
-          <Panel position="top-left" className="bg-white rounded-lg shadow-lg p-4 space-y-2">
-            <h1 className="text-xl font-bold text-gray-900">AgentFlow</h1>
-            <p className="text-sm text-gray-600">Visual AI Workflow Builder</p>
-
-            <div className="flex flex-col gap-2 pt-2">
-              <button
-                onClick={() => openModal()}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition font-medium text-sm"
-              >
-                + Create Agent
-              </button>
-
-              <button
-                onClick={() => loadTemplate('customer-support')}
-                className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition font-medium text-sm"
-              >
-                📋 Load Template
-              </button>
-            </div>
-
-            <div className="pt-2 border-t border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Agent Types:</p>
-              <div className="space-y-1 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-blue-200 border border-blue-400 rounded"></div>
-                  <span className="text-gray-700">Intake</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-purple-200 border border-purple-400 rounded"></div>
-                  <span className="text-gray-700">Processing</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-200 border border-green-400 rounded"></div>
-                  <span className="text-gray-700">Response</span>
-                </div>
-              </div>
-            </div>
-          </Panel>
         </ReactFlow>
       </div>
 
       <AgentModal />
+      <DepartmentDetailModal />
     </>
   );
 }

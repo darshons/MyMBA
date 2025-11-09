@@ -1,13 +1,11 @@
 import { Node, Edge } from '@xyflow/react';
 
-export type AgentType = 'intake' | 'processing' | 'response';
-
 export interface AgentData extends Record<string, unknown> {
   id: string;
   name: string;
-  type: AgentType;
   instructions: string;
   status?: 'idle' | 'active' | 'completed';
+  toolsEnabled?: boolean;
 }
 
 export type AgentNode = Node<AgentData, 'agentNode'>;
