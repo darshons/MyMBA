@@ -611,12 +611,6 @@ export default function CEOChat({ onCompanyCreationRequest, onAgentCreationReque
           + Add Agent
         </button>
         <button
-          onClick={() => openToolModal()}
-          className="w-full bg-[#71816D] text-white px-4 py-2.5 rounded-lg hover:bg-[#5A6A56] transition-all font-medium text-sm shadow-sm"
-        >
-          + Add Tool
-        </button>
-        <button
           onClick={() => addStickyNote()}
           className="w-full bg-[#FEF08A] text-gray-800 px-4 py-2.5 rounded-lg hover:bg-[#FDE047] transition-all font-medium text-sm shadow-sm border border-yellow-300"
         >
