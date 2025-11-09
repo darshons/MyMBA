@@ -1,13 +1,11 @@
 import { create } from 'zustand';
-import { addEdge, applyNodeChanges, applyEdgeChanges, Connection, EdgeChange, NodeChange, Node } from '@xyflow/react';
+import { addEdge, applyNodeChanges, applyEdgeChanges, Connection, EdgeChange, NodeChange } from '@xyflow/react';
 import { AgentNode, AgentEdge, AgentData, WorkflowExecution, ExecutionResult } from '@/types';
-import { DepartmentNode } from '@/types/company';
 import { saveExecution } from '@/lib/storage';
-
-type FlowNode = AgentNode | DepartmentNode;
+import { getNextColorIndex } from '@/lib/colors';
 
 interface FlowState {
-  nodes: FlowNode[];
+  nodes: AgentNode[];
   edges: AgentEdge[];
   execution: WorkflowExecution | null;
   isModalOpen: boolean;
@@ -15,25 +13,22 @@ interface FlowState {
   currentWorkflowId: string | null;
   currentWorkflowName: string;
 
-  // Department detail view
-  departmentDetailId: string | null;
-  currentDepartmentId: string | null; // For tracking which department we're adding employees to
-
   // Node/Edge operations
-  onNodesChange: (changes: NodeChange<FlowNode>[]) => void;
+  onNodesChange: (changes: NodeChange<AgentNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
-  addAgent: (agent: Omit<AgentData, 'id'>, departmentId?: string) => void;
+  addAgent: (agent: Omit<AgentData, 'id'>) => void;
   updateAgent: (id: string, data: Partial<AgentData>) => void;
   deleteAgent: (id: string) => void;
+
+  // Sticky Note operations
+  addStickyNote: (text?: string, color?: string) => void;
+  updateStickyNote: (id: string, data: { text?: string; color?: string }) => void;
+  deleteStickyNote: (id: string) => void;
 
   // Modal operations
   openModal: (agent?: AgentData) => void;
   closeModal: () => void;
-
-  // Department detail modal
-  openDepartmentDetail: (departmentId: string) => void;
-  closeDepartmentDetail: () => void;
 
   // Workflow execution
   startExecution: (input: string) => void;
@@ -48,13 +43,9 @@ interface FlowState {
   // AI workflow generation
   generateWorkflowFromAI: (agents: any[], connections: any[]) => void;
 
-  // Workflow/Department management
+  // Workflow management
   setWorkflowName: (name: string) => void;
   saveCurrentWorkflow: () => void;
-
-  // Department node management
-  loadDepartmentNodes: () => void;
-  updateDepartmentNodeStatus: (departmentId: string, status: 'idle' | 'active' | 'completed') => void;
 }
 
 export const useFlowStore = create<FlowState>((set, get) => ({
@@ -64,13 +55,11 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   isModalOpen: false,
   editingAgent: null,
   currentWorkflowId: null,
-  currentWorkflowName: 'My Department',
-  departmentDetailId: null,
-  currentDepartmentId: null,
+  currentWorkflowName: 'My Workflow',
 
   onNodesChange: (changes) => {
     set({
-      nodes: applyNodeChanges(changes, get().nodes) as FlowNode[],
+      nodes: applyNodeChanges(changes, get().nodes) as AgentNode[],
     });
   },
 
@@ -86,7 +75,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     });
   },
 
-  addAgent: (agent, departmentId) => {
+  addAgent: (agent) => {
     const id = `agent-${Date.now()}`;
     const newNode: AgentNode = {
       id,
@@ -96,19 +85,9 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         ...agent,
         id,
         status: 'idle',
+        colorIndex: getNextColorIndex(),
       } as AgentData,
     };
-
-    // If we're in a department detail view, add to that department
-    if (departmentId || get().departmentDetailId) {
-      const targetDeptId = departmentId || get().departmentDetailId;
-      if (targetDeptId) {
-        // This will be handled by DepartmentDetailModal's local state
-        // But we still add to the main nodes for the modal to pick up
-        set({ nodes: [...get().nodes, newNode] });
-        return;
-      }
-    }
 
     set({ nodes: [...get().nodes, newNode] });
   },
@@ -116,7 +95,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   updateAgent: (id, data) => {
     set({
       nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, ...data } } as FlowNode : node
+        node.id === id ? { ...node, data: { ...node.data, ...data } } as AgentNode : node
       ),
     });
   },
@@ -128,20 +107,56 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     });
   },
 
+  addStickyNote: (text = '', color = '#FEF08A') => {
+    const id = `sticky-${Date.now()}`;
+    const newNode = {
+      id,
+      type: 'stickyNote',
+      position: { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 },
+      data: {
+        id,
+        text,
+        color,
+      },
+    };
+
+    set({ nodes: [...get().nodes, newNode as any] });
+  },
+
+  updateStickyNote: (id, data) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === id ? { ...node, data: { ...node.data, ...data } } : node
+      ),
+    });
+
+    // Update company knowledge base with sticky note content
+    if (data.text && data.text.trim()) {
+      fetch('/api/knowledge/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'add_note',
+          data: data.text,
+        }),
+      }).catch(error => {
+        console.error('Failed to update knowledge base with sticky note:', error);
+      });
+    }
+  },
+
+  deleteStickyNote: (id) => {
+    set({
+      nodes: get().nodes.filter((node) => node.id !== id),
+    });
+  },
+
   openModal: (agent) => {
     set({ isModalOpen: true, editingAgent: agent || null });
   },
 
   closeModal: () => {
     set({ isModalOpen: false, editingAgent: null });
-  },
-
-  openDepartmentDetail: (departmentId) => {
-    set({ departmentDetailId: departmentId, currentDepartmentId: departmentId });
-  },
-
-  closeDepartmentDetail: () => {
-    set({ departmentDetailId: null, currentDepartmentId: null });
   },
 
   startExecution: (input) => {
@@ -219,6 +234,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           name: 'Intake Agent',
           instructions: 'You analyze customer inquiries and categorize them as billing, technical, or general. Respond with the category and a brief summary.',
           status: 'idle',
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -231,6 +247,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           name: 'Technical Support Agent',
           instructions: 'You solve technical issues and provide step-by-step solutions. Be detailed and helpful.',
           status: 'idle',
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -243,6 +260,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           name: 'Response Agent',
           instructions: 'You format the solution into a friendly customer response. Be empathetic and clear.',
           status: 'idle',
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -276,6 +294,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: 'You receive inbound lead data and extract key information: company name, contact name, email, phone, industry, company size, and initial request. Parse the input and structure it clearly for the next agent.',
           status: 'idle',
           toolsEnabled: false,
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -289,6 +308,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: 'You enrich lead data using web search. Search for the company online and gather: recent news, funding status, key products/services, company size validation, and potential pain points. Provide a concise summary of findings.',
           status: 'idle',
           toolsEnabled: true,
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -302,6 +322,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: 'You score leads from 0-100 based on: company size (25 pts), industry fit (25 pts), budget indicators (25 pts), and urgency signals (25 pts). Provide the score with a brief justification. Categorize as Hot (80+), Warm (50-79), or Cold (<50).',
           status: 'idle',
           toolsEnabled: false,
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -315,6 +336,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: 'You draft a personalized outreach email based on the lead score and research. For Hot leads: schedule a call immediately. For Warm leads: educational content offer. For Cold leads: nurture sequence. Keep it concise and value-focused.',
           status: 'idle',
           toolsEnabled: false,
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -328,6 +350,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: 'You post a summary to the #sales Slack channel with: lead name, company, score, category (Hot/Warm/Cold), key findings, and recommended next action. Format it clearly with emojis for visual scanning.',
           status: 'idle',
           toolsEnabled: true,
+          colorIndex: getNextColorIndex(),
         },
       };
 
@@ -388,6 +411,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
           instructions: agent.instructions,
           status: 'idle',
           toolsEnabled: true,
+          colorIndex: getNextColorIndex(),
         } as AgentData,
       };
 
@@ -419,55 +443,5 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   saveCurrentWorkflow: () => {
     // This will be used to save workflow to LocalStorage if needed
     // For now, workflows are auto-generated, so we might not need manual saving
-  },
-
-  loadDepartmentNodes: () => {
-    // Import at runtime to avoid circular dependencies
-    const { getCurrentCompany } = require('@/lib/companyStorage');
-    const { DepartmentNode } = require('@/types/company');
-
-    const company = getCurrentCompany();
-    if (!company) {
-      set({ nodes: [], edges: [] });
-      return;
-    }
-
-    // Get root departments (no parent)
-    const rootDepartments = company.departments.filter((d: any) => !d.parentId);
-
-    // Convert departments to nodes
-    const departmentNodes = rootDepartments.map((dept: any, index: number) => {
-      const subdepartments = company.departments.filter((d: any) => d.parentId === dept.id);
-
-      return {
-        id: dept.id,
-        type: 'departmentNode',
-        position: dept.position || {
-          x: 150 + (index % 3) * 500,
-          y: 150 + Math.floor(index / 3) * 350,
-        },
-        data: {
-          departmentId: dept.id,
-          name: dept.name,
-          description: dept.description,
-          employeeCount: dept.employees?.length || 0,
-          subdepartmentCount: subdepartments.length,
-          status: 'idle',
-        },
-      };
-    });
-
-    // Create edges between departments if needed (for now, no edges)
-    set({ nodes: departmentNodes, edges: [] });
-  },
-
-  updateDepartmentNodeStatus: (departmentId, status) => {
-    set({
-      nodes: get().nodes.map((node) =>
-        node.id === departmentId
-          ? { ...node, data: { ...node.data, status } } as FlowNode
-          : node
-      ),
-    });
   },
 }));

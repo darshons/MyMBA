@@ -17,41 +17,41 @@ export async function POST(request: NextRequest) {
 
     const prompt = `You are an organizational consultant designing company structures. A CEO wants to start a ${industry} company${description ? `: ${description}` : ''}.
 
-Generate a comprehensive department structure for this company. Include:
-1. Core departments (e.g., Operations, Marketing, HR, Finance)
-2. Subdepartments where appropriate (e.g., Marketing > Social Media, Content)
-3. One AI agent for each department that will handle ALL tasks for that department
+Generate a lean department structure with 5-8 core departments. Focus on essential departments only.
 
 For each department's agent, specify:
-- Name (make it creative and role-appropriate, e.g., "Marketing Maven", "Operations Orchestrator")
-- Role/title (e.g., "Senior Marketing Agent", "Operations Director Agent")
-- Comprehensive responsibilities (this agent handles ALL department tasks, so be thorough)
+- Name (use the DEPARTMENT NAME as the agent name, e.g., "Marketing", "Finance", "Operations", "Sales")
+- Role (brief 1-line description)
+- Responsibilities (concise, 1-2 sentences covering key duties)
 
 Return ONLY valid JSON in this exact format:
 {
   "companyName": "suggested company name",
-  "reasoning": "brief explanation of why these departments",
+  "reasoning": "brief 1-sentence explanation",
   "departments": [
     {
       "name": "Department Name",
-      "description": "what this department does",
+      "description": "brief 1-sentence description",
       "parentName": null,
       "suggestedAgent": {
-        "name": "Agent Name",
-        "role": "Agent Title",
-        "responsibilities": "Comprehensive list of what this agent handles for the entire department"
+        "name": "Department Name",
+        "role": "Brief role description",
+        "responsibilities": "Concise 1-2 sentence list of key duties"
       }
     }
   ]
 }
 
-For subdepartments, set parentName to the parent department's name.
-Make it specific to the ${industry} industry.
-Each agent should be capable of handling the full scope of their department's work.`;
+IMPORTANT:
+- Keep it to 5-8 departments maximum
+- Be concise in all descriptions
+- Agent name must be the department name
+- No subdepartments (all parentName should be null)
+- Make it specific to the ${industry} industry`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-haiku-20240307',
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         {
           role: 'user',

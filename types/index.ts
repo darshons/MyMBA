@@ -6,6 +6,7 @@ export interface AgentData extends Record<string, unknown> {
   instructions: string;
   status?: 'idle' | 'active' | 'completed';
   toolsEnabled?: boolean;
+  colorIndex?: number;
 }
 
 export type AgentNode = Node<AgentData, 'agentNode'>;

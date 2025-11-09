@@ -1,25 +1,22 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
-  Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { useFlowStore } from '@/store/useFlowStore';
 import AgentNode from './AgentNode';
-import DepartmentNode from './DepartmentNode';
 import AgentModal from './AgentModal';
-import DepartmentDetailModal from './DepartmentDetailModal';
-import { getCurrentCompany } from '@/lib/companyStorage';
+import StickyNote from './StickyNote';
 
 const nodeTypes = {
   agentNode: AgentNode,
-  departmentNode: DepartmentNode,
+  stickyNote: StickyNote,
 };
 
 export default function FlowCanvas() {
@@ -29,21 +26,7 @@ export default function FlowCanvas() {
     onNodesChange,
     onEdgesChange,
     onConnect,
-    openModal,
-    loadTemplate,
-    loadDepartmentNodes,
   } = useFlowStore();
-
-  // Load department nodes when component mounts if company exists
-  useEffect(() => {
-    const company = getCurrentCompany();
-    if (company && company.departments.length > 0) {
-      console.log('Loading department nodes, found', company.departments.length, 'departments');
-      loadDepartmentNodes();
-    } else {
-      console.log('No company or departments found');
-    }
-  }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -67,25 +50,11 @@ export default function FlowCanvas() {
         >
           <Background color="#828179" gap={16} size={1} />
           <Controls />
-          <MiniMap
-            nodeColor={(node) => {
-              switch (node.data.type) {
-                case 'intake':
-                  return '#CC785C';
-                case 'processing':
-                  return '#828179';
-                case 'response':
-                  return '#CC785C';
-                default:
-                  return '#828179';
-              }
-            }}
-          />
+          <MiniMap />
         </ReactFlow>
       </div>
 
       <AgentModal />
-      <DepartmentDetailModal />
     </>
   );
 }

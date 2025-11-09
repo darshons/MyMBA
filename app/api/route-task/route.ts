@@ -11,7 +11,11 @@ interface Department {
   id: string;
   name: string;
   description: string;
-  employees: any[];
+  agent?: {
+    data?: {
+      name: string;
+    };
+  };
 }
 
 interface Company {
@@ -34,8 +38,8 @@ export async function POST(req: NextRequest) {
     // Create department summary for routing
     const departmentSummary = company.departments
       .map((dept) => {
-        const employeeCount = dept.employees?.length || 0;
-        return `- ${dept.name} (ID: ${dept.id}): ${dept.description}. Has ${employeeCount} employees.`;
+        const agentName = dept.agent?.data?.name || 'No agent assigned';
+        return `- ${dept.name} (ID: ${dept.id}): ${dept.description}. Agent: ${agentName}.`;
       })
       .join('\n');
 

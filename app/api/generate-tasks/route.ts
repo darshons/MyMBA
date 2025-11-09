@@ -54,15 +54,15 @@ ${dept.description}
 CURRENT SITUATION & GOALS:
 ${deptSection || 'No specific information available.'}
 
-Based on the company's goals, current problems, and your department's responsibilities, propose 1-3 specific, actionable tasks that would help move the company forward.
+Based on the company's goals, current problems, and your department's responsibilities, propose exactly ONE specific, actionable task that would have the most impact.
 
-For each task, consider:
+Consider:
 - What problems from the company overview can you address?
 - What goals can you help achieve?
-- What improvements would have the most impact?
+- What single improvement would have the most impact?
 - What is realistically achievable in the near term?
 
-Respond with a JSON array of tasks in this format:
+Respond with a JSON array containing exactly ONE task in this format:
 [
   {
     "action": "Brief task description (what needs to be done)",
@@ -71,7 +71,7 @@ Respond with a JSON array of tasks in this format:
   }
 ]
 
-IMPORTANT: Respond ONLY with the JSON array, no other text.`;
+IMPORTANT: Respond with exactly ONE task only. Respond ONLY with the JSON array, no other text.`;
 
       try {
         const response = await anthropic.messages.create({

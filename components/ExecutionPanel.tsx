@@ -5,6 +5,7 @@ import { useFlowStore } from '@/store/useFlowStore';
 import { getAllExecutions, SavedExecution } from '@/lib/storage';
 import { getCurrentCompany, getDepartment } from '@/lib/companyStorage';
 import FeedbackModal from './FeedbackModal';
+import { getStoredCustomTools } from '@/lib/customToolStorage';
 
 export default function ExecutionPanel() {
   const { nodes, edges, execution, startExecution, currentWorkflowName, updateDepartmentNodeStatus } = useFlowStore();
@@ -156,6 +157,11 @@ export default function ExecutionPanel() {
         (exec) => exec.workflowName === currentWorkflowName
       );
 
+      const customTools = getStoredCustomTools();
+
+      // Build company structure for sub-agent creation
+      const company = getCurrentCompany();
+
       const response = await fetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,6 +170,8 @@ export default function ExecutionPanel() {
           agent: executionNodes[0], // Single agent
           workflowName: currentWorkflowName,
           pastExecutions,
+          customTools,
+          company,
         }),
       });
 
@@ -192,6 +200,21 @@ export default function ExecutionPanel() {
                 console.log('Adding result:', data.result);
                 useFlowStore.getState().addExecutionResult(data.result);
                 useFlowStore.getState().updateNodeStatus(data.result.agentId, 'completed');
+
+                // Update knowledge base with completed work
+                try {
+                  await fetch('/api/knowledge/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      type: 'add_learning',
+                      departmentName: data.result.agentName,
+                      data: `[${new Date().toLocaleDateString()}] ${input.substring(0, 80)}: ${data.result.output.substring(0, 150)}`,
+                    }),
+                  });
+                } catch (kbError) {
+                  console.error('Failed to update knowledge base:', kbError);
+                }
               } else if (data.type === 'active') {
                 console.log('Agent active:', data.agentId);
                 useFlowStore.getState().updateNodeStatus(data.agentId, 'active');

@@ -3,17 +3,14 @@
 import { useState } from 'react';
 import FlowCanvas from '@/components/FlowCanvas';
 import CEOChat from '@/components/CEOChat';
-import KnowledgeViewer from '@/components/KnowledgeViewer';
 import { ProposedCompany } from '@/types/company';
-import { createCompany, addDepartment } from '@/lib/companyStorage';
-import { AgentNode } from '@/types';
+import { useFlowStore } from '@/store/useFlowStore';
 
 export default function Home() {
   const [showChat, setShowChat] = useState(false);
-  const [chatMinimized, setChatMinimized] = useState(false);
   const [proposedCompany, setProposedCompany] = useState<ProposedCompany | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [companyRefreshKey, setCompanyRefreshKey] = useState(0);
+  const { addAgent } = useFlowStore();
 
   const handleCompanyCreationRequest = async (industry: string, description: string) => {
     setIsGenerating(true);
@@ -48,58 +45,36 @@ export default function Home() {
     if (!proposedCompany) return;
 
     try {
-      // Create the company
-      const company = createCompany(proposedCompany.name, proposedCompany.industry);
+      // First, reset the company.md file to clean slate
+      await fetch('/api/knowledge/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-      // Build department map for resolving parent relationships
-      const deptMap = new Map<string, string>();
+      // Clear all localStorage data from previous company
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('agentflow_executions');
+        localStorage.removeItem('agentflow_workflows');
+        localStorage.removeItem('agentflow_current_workflow');
+        localStorage.removeItem('agentflow_goals');
+        localStorage.removeItem('agentflow_proposed_actions');
+        localStorage.removeItem('agentflow_events');
+        localStorage.removeItem('agentflow_company');
+        console.log('Cleared all localStorage data for new company');
+      }
 
-      // Create all departments with their single agent
-      for (const proposedDept of proposedCompany.departments) {
-        // Create single agent for the department
-        const agentId = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Create all agents as standalone nodes - use for loop with small delay to avoid race conditions
+      for (let index = 0; index < proposedCompany.departments.length; index++) {
+        const proposedDept = proposedCompany.departments[index];
 
-        const agent: AgentNode = {
-          id: agentId,
-          type: 'agentNode',
-          position: {
-            x: 200,
-            y: 200,
-          },
-          data: {
-            id: agentId,
-            name: proposedDept.suggestedAgent.name,
-            instructions: `You are ${proposedDept.suggestedAgent.name}, ${proposedDept.suggestedAgent.role}. Your responsibilities: ${proposedDept.suggestedAgent.responsibilities}`,
-            status: 'idle',
-            toolsEnabled: true,
-          },
-        };
-
-        // Resolve parent ID
-        let parentId: string | undefined;
-        if (proposedDept.parentName) {
-          parentId = deptMap.get(proposedDept.parentName);
-        }
-
-        // Create department with single agent
-        const dept = addDepartment({
-          name: proposedDept.name,
-          description: proposedDept.description,
-          parentId,
-          agent,
+        addAgent({
+          name: proposedDept.suggestedAgent.name,
+          instructions: `You are ${proposedDept.suggestedAgent.name}, ${proposedDept.suggestedAgent.role}. Your responsibilities: ${proposedDept.suggestedAgent.responsibilities}`,
+          toolsEnabled: true,
         });
 
-        deptMap.set(proposedDept.name, dept.id);
-
-        // Add department section to knowledge base
-        await fetch('/api/knowledge/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'add_department',
-            departmentName: proposedDept.name,
-          }),
-        });
+        // Small delay to ensure state updates complete
+        await new Promise(resolve => setTimeout(resolve, 10));
       }
 
       // Update company overview in knowledge base
@@ -111,17 +86,15 @@ export default function Home() {
           data: {
             industry: proposedCompany.industry,
             mission: `Build an innovative ${proposedCompany.industry} company`,
-            goals: ['Establish company structure', 'Build effective departments'],
+            goals: ['Establish company structure', 'Build effective team'],
             problems: [],
           },
         }),
       });
 
       setProposedCompany(null);
-      setCompanyRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Failed to create company:', error);
-      alert('Failed to create company. Please try again.');
     }
   };
 
@@ -129,11 +102,11 @@ export default function Home() {
     setProposedCompany(null);
   };
 
-  const handleDepartmentCreationRequest = async (description: string) => {
+  const handleAgentCreationRequest = async (description: string) => {
     setIsGenerating(true);
 
     try {
-      // Call workflow generation API to get employee structure
+      // Call workflow generation API to get agent structure
       const response = await fetch('/api/generate-workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,70 +114,22 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate department');
+        throw new Error('Failed to generate agent');
       }
 
       const data = await response.json();
 
-      // Extract department name from description (simple approach)
-      const extractDepartmentName = (desc: string): string => {
-        const keywords = ['marketing', 'sales', 'hr', 'human resources', 'finance', 'engineering', 'support', 'customer service', 'operations', 'legal', 'product', 'design', 'analytics', 'data'];
-        const lowerDesc = desc.toLowerCase();
-
-        for (const keyword of keywords) {
-          if (lowerDesc.includes(keyword)) {
-            return keyword.charAt(0).toUpperCase() + keyword.slice(1) + ' Department';
-          }
-        }
-
-        return 'New Department';
-      };
-
-      const departmentName = extractDepartmentName(description);
-
-      // Create single agent from AI-generated data
-      const agentId = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      const agent: AgentNode = {
-        id: agentId,
-        type: 'agentNode',
-        position: {
-          x: 200,
-          y: 200,
-        },
-        data: {
-          id: agentId,
-          name: data.agent.name,
-          instructions: data.agent.instructions,
-          status: 'idle',
-          toolsEnabled: true,
-        },
-      };
-
-      // Add department to company with single agent
-      addDepartment({
-        name: departmentName,
-        description: description,
-        agent,
+      // Create standalone agent using the store
+      addAgent({
+        name: data.agent.name,
+        instructions: data.agent.instructions,
+        toolsEnabled: true,
       });
 
-      // Add department section to knowledge base
-      await fetch('/api/knowledge/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'add_department',
-          departmentName,
-        }),
-      });
-
-      // Refresh the canvas to show the new department
-      setCompanyRefreshKey(prev => prev + 1);
-
-      alert(`${departmentName} created successfully!`);
+      alert(`Agent "${data.agent.name}" created successfully!`);
     } catch (error) {
-      console.error('Department creation error:', error);
-      alert('Failed to create department. Please try again.');
+      console.error('Agent creation error:', error);
+      alert('Failed to create agent. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -225,27 +150,18 @@ export default function Home() {
               </div>
             )}
 
-            <h3 className="font-semibold text-[#141413] mb-3">Proposed Departments:</h3>
+            <h3 className="font-semibold text-[#141413] mb-3">Proposed Team ({proposedCompany.departments.length} Agents):</h3>
 
             <div className="space-y-3 mb-6">
               {proposedCompany.departments.map((dept, idx) => (
                 <div key={idx} className="border border-[#828179] rounded-lg p-4 bg-[#F0EFEA]">
-                  <div className="flex items-start gap-2 mb-2">
+                  <div className="flex items-start gap-2">
                     <div className="w-2 h-2 bg-[#CC785C] rounded-full mt-2"></div>
                     <div className="flex-1">
-                      <h4 className="font-semibold text-[#141413]">{dept.name}</h4>
-                      {dept.parentName && (
-                        <p className="text-xs text-[#828179]">Subdepartment of {dept.parentName}</p>
-                      )}
-                      <p className="text-sm text-[#141413] mt-1">{dept.description}</p>
-
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs font-semibold text-[#828179]">AGENT:</p>
-                        <div className="text-xs text-[#141413] pl-3 border-l-2 border-[#CC785C]">
-                          <span className="font-medium">{dept.suggestedAgent.name}</span> - {dept.suggestedAgent.role}
-                          <p className="text-[#828179]">{dept.suggestedAgent.responsibilities}</p>
-                        </div>
-                      </div>
+                      <h4 className="font-semibold text-[#141413] text-base">{dept.suggestedAgent.name}</h4>
+                      <p className="text-xs text-[#828179] font-medium mt-0.5">{dept.suggestedAgent.role}</p>
+                      <p className="text-sm text-[#141413] mt-2">{dept.suggestedAgent.responsibilities}</p>
+                      <p className="text-xs text-[#828179] mt-2 italic">Focus area: {dept.name}</p>
                     </div>
                   </div>
                 </div>
@@ -257,7 +173,7 @@ export default function Home() {
                 onClick={handleApproveCompany}
                 className="flex-1 bg-[#CC785C] text-white px-4 py-3 rounded-lg hover:bg-[#b86a4f] transition font-semibold"
               >
-                Approve & Create Company
+                Approve & Create Team
               </button>
               <button
                 onClick={handleRejectCompany}
@@ -275,35 +191,34 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40">
           <div className="bg-white rounded-lg p-6 text-center">
             <div className="animate-spin w-12 h-12 border-4 border-[#CC785C] border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-[#141413] font-medium">Generating your company structure...</p>
+            <p className="text-[#141413] font-medium">Generating your team...</p>
           </div>
         </div>
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <FlowCanvas key={companyRefreshKey} />
+        <FlowCanvas />
       </div>
 
-      {/* Command Center */}
-      <div className={`transition-all ${showChat ? 'h-[600px]' : 'h-0'} border-t border-[#828179]`}>
-        {showChat && (
-          <CEOChat
-            onCompanyCreationRequest={handleCompanyCreationRequest}
-            onDepartmentCreationRequest={handleDepartmentCreationRequest}
-          />
-        )}
-      </div>
+      {/* Hover trigger zone on left edge */}
+      <div
+        onMouseEnter={() => setShowChat(true)}
+        className="fixed left-0 top-0 bottom-0 w-4 z-50 cursor-pointer"
+        style={{ pointerEvents: showChat ? 'none' : 'auto' }}
+      />
 
-      {/* Command Center Toggle Button */}
-      <button
-        onClick={() => setShowChat(!showChat)}
-        className="fixed bottom-4 left-4 bg-[#CC785C] text-white px-6 py-3 rounded-full shadow-lg hover:bg-[#b86a4f] transition font-semibold text-sm z-50"
+      {/* Command Center - Left Sidebar */}
+      <div
+        onMouseLeave={() => setShowChat(false)}
+        className={`fixed left-0 top-0 bottom-0 w-96 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-40 ${
+          showChat ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        {showChat ? 'Close Command Center' : 'Open Command Center'}
-      </button>
-
-      {/* Knowledge Base Viewer */}
-      <KnowledgeViewer />
+        <CEOChat
+          onCompanyCreationRequest={handleCompanyCreationRequest}
+          onAgentCreationRequest={handleAgentCreationRequest}
+        />
+      </div>
     </div>
   );
 }

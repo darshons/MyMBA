@@ -1,3 +1,5 @@
+import { CustomToolDefinition } from '@/types/customTool';
+
 // MCP-style tool definitions for AI agents
 export interface Tool {
   name: string;
@@ -13,7 +15,7 @@ export interface Tool {
 export const AVAILABLE_TOOLS: Tool[] = [
   {
     name: 'web_search',
-    description: 'Search the web for current information. Use this when you need up-to-date data, news, or information not in your training data.',
+    description: 'Search the web for current information. Returns basic facts and data. For comprehensive research, use multi_web_search instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -23,6 +25,65 @@ export const AVAILABLE_TOOLS: Tool[] = [
         }
       },
       required: ['query']
+    }
+  },
+  {
+    name: 'multi_web_search',
+    description: 'Perform multiple web searches with different query strategies to gather comprehensive information. Best for market research, industry data, and specific local information.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'The main topic to research (e.g., "dog grooming industry Houston")'
+        },
+        aspects: {
+          type: 'array',
+          description: 'Specific aspects to research (e.g., ["market size", "competitors", "pricing"])',
+          items: { type: 'string' }
+        }
+      },
+      required: ['topic']
+    }
+  },
+  {
+    name: 'scrape_website',
+    description: 'Extract and parse content from a specific website. Use this to get detailed information from articles, blogs, or data pages.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The URL to scrape'
+        },
+        extract: {
+          type: 'string',
+          description: 'What to extract: "text" for article content, "data" for structured data, "links" for all links'
+        }
+      },
+      required: ['url']
+    }
+  },
+  {
+    name: 'industry_research',
+    description: 'Research a specific industry with market data, trends, and key statistics. Provides structured industry analysis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        industry: {
+          type: 'string',
+          description: 'Industry name (e.g., "pet grooming", "dog salons")'
+        },
+        location: {
+          type: 'string',
+          description: 'Geographic location (e.g., "Houston", "Texas", "United States")'
+        },
+        focus: {
+          type: 'string',
+          description: 'Research focus: "market_size", "trends", "competitors", "pricing", or "all"'
+        }
+      },
+      required: ['industry']
     }
   },
   {
@@ -226,15 +287,123 @@ export const AVAILABLE_TOOLS: Tool[] = [
       },
       required: ['text']
     }
+  },
+  {
+    name: 'create_sub_agent',
+    description: 'Create a temporary specialized sub-agent to handle a specific subtask. The sub-agent will execute the task and then be removed. Use this for workflows like panel of judges, parallel analysis, or breaking down complex work into specialized roles. You can create multiple sub-agents for the same task to get different perspectives.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        role: {
+          type: 'string',
+          description: 'The role/specialty of the sub-agent (e.g., "Commercial Viability Judge", "Marketing Analyst", "Technical Reviewer")'
+        },
+        task: {
+          type: 'string',
+          description: 'The specific task for this sub-agent to complete'
+        },
+        context: {
+          type: 'string',
+          description: 'Optional additional context or information the sub-agent needs'
+        }
+      },
+      required: ['role', 'task']
+    }
+  },
+  {
+    name: 'generate_code',
+    description: 'Generate code snippets in various programming languages. Useful for technical documentation, examples, or quick prototypes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description: 'What the code should do'
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language (e.g., python, javascript, sql)'
+        }
+      },
+      required: ['description', 'language']
+    }
+  },
+  {
+    name: 'analyze_sentiment',
+    description: 'Analyze the sentiment of text (positive, negative, neutral). Useful for customer feedback, reviews, or social media analysis.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Text to analyze'
+        }
+      },
+      required: ['text']
+    }
+  },
+  {
+    name: 'extract_keywords',
+    description: 'Extract key topics and keywords from text. Useful for content analysis, SEO, or document summarization.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Text to extract keywords from'
+        },
+        count: {
+          type: 'number',
+          description: 'Number of keywords to extract (default: 10)'
+        }
+      },
+      required: ['text']
+    }
+  },
+  {
+    name: 'create_presentation_outline',
+    description: 'Generate a structured presentation outline with slides and talking points.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          description: 'Presentation topic'
+        },
+        duration: {
+          type: 'number',
+          description: 'Duration in minutes'
+        },
+        audience: {
+          type: 'string',
+          description: 'Target audience (e.g., executives, investors, team)'
+        }
+      },
+      required: ['topic', 'duration', 'audience']
+    }
   }
 ];
 
 // Tool executor functions
-export async function executeToolCall(toolName: string, toolInput: any): Promise<string> {
+export async function executeToolCall(
+  toolName: string,
+  toolInput: any,
+  customTools?: Map<string, CustomToolDefinition>,
+  context?: { company?: any; agentName?: string; customToolsArray?: any[] }
+): Promise<string> {
   try {
     switch (toolName) {
       case 'web_search':
         return await webSearch(toolInput.query);
+
+      case 'multi_web_search':
+        return await multiWebSearch(toolInput.topic, toolInput.aspects);
+
+      case 'scrape_website':
+        return await scrapeWebsite(toolInput.url, toolInput.extract || 'text');
+
+      case 'industry_research':
+        return await industryResearch(toolInput.industry, toolInput.location, toolInput.focus);
 
       case 'fetch_url':
         return await fetchUrl(toolInput.url);
@@ -272,7 +441,25 @@ export async function executeToolCall(toolName: string, toolInput: any): Promise
       case 'parse_contact_info':
         return parseContactInfo(toolInput.text);
 
+      case 'create_sub_agent':
+        return await createSubAgent(toolInput.role, toolInput.task, toolInput.context, context);
+
+      case 'generate_code':
+        return generateCode(toolInput.description, toolInput.language);
+
+      case 'analyze_sentiment':
+        return analyzeSentiment(toolInput.text);
+
+      case 'extract_keywords':
+        return extractKeywords(toolInput.text, toolInput.count || 10);
+
+      case 'create_presentation_outline':
+        return createPresentationOutline(toolInput.topic, toolInput.duration, toolInput.audience);
+
       default:
+        if (customTools && customTools.has(toolName)) {
+          return await executeCustomTool(customTools.get(toolName)!, toolInput);
+        }
         return `Error: Unknown tool "${toolName}"`;
     }
   } catch (error) {
@@ -280,29 +467,411 @@ export async function executeToolCall(toolName: string, toolInput: any): Promise
   }
 }
 
+async function executeCustomTool(tool: CustomToolDefinition, toolInput: any): Promise<string> {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (tool.authType === 'bearer' && tool.authValue) {
+      headers['Authorization'] = `Bearer ${tool.authValue}`;
+    } else if (tool.authType === 'apikey' && tool.authValue) {
+      headers['x-api-key'] = tool.authValue;
+    }
+
+    const payload = {
+      input: toolInput?.input ?? toolInput,
+      context: toolInput?.context,
+      toolId: tool.id,
+      toolName: tool.name,
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(tool.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    let responseBody: string;
+    if (contentType.includes('application/json')) {
+      const json = await response.json();
+      responseBody = JSON.stringify(json, null, 2);
+    } else {
+      responseBody = await response.text();
+    }
+
+    if (!response.ok) {
+      return `Custom tool "${tool.name}" failed: HTTP ${response.status} ${response.statusText}\n${responseBody}`;
+    }
+
+    return `Custom tool "${tool.name}" response:\n${responseBody}`;
+  } catch (error) {
+    return `Custom tool "${tool.name}" error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+// Rate limiter for Brave Search API (1 request per second)
+let lastBraveSearchTime = 0;
+const BRAVE_RATE_LIMIT_MS = 1000; // 1 second between requests
+
+async function rateLimitedDelay() {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastBraveSearchTime;
+
+  if (timeSinceLastRequest < BRAVE_RATE_LIMIT_MS) {
+    const waitTime = BRAVE_RATE_LIMIT_MS - timeSinceLastRequest;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  lastBraveSearchTime = Date.now();
+}
+
 // Tool implementations
 async function webSearch(query: string): Promise<string> {
   try {
-    // Use DuckDuckGo Instant Answer API (no key required)
+    // Try Brave Search API first (if configured)
+    if (process.env.BRAVE_SEARCH_API_KEY) {
+      return await braveSearch(query);
+    }
+
+    // Try Tavily AI (if configured) - built for AI agents
+    if (process.env.TAVILY_API_KEY) {
+      return await tavilySearch(query);
+    }
+
+    // Fallback to DuckDuckGo scraping approach
+    return await duckDuckGoSearch(query);
+  } catch (error) {
+    return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}. Consider adding BRAVE_SEARCH_API_KEY or TAVILY_API_KEY to .env.local for better results.`;
+  }
+}
+
+async function braveSearch(query: string): Promise<string> {
+  try {
+    // Rate limit: wait if necessary to ensure 1 request per second
+    await rateLimitedDelay();
+
     const response = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+      {
+        headers: {
+          'Accept': 'application/json',
+          'X-Subscription-Token': process.env.BRAVE_SEARCH_API_KEY || '',
+        },
+      }
     );
+
     const data = await response.json();
 
-    if (data.AbstractText) {
-      return `Search results for "${query}":\n\n${data.AbstractText}\n\nSource: ${data.AbstractURL || 'DuckDuckGo'}`;
-    } else if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      const topics = data.RelatedTopics
-        .slice(0, 3)
-        .map((topic: any) => topic.Text || topic.FirstURL)
-        .filter(Boolean)
-        .join('\n\n');
-      return `Search results for "${query}":\n\n${topics}`;
+    if (data.web?.results && data.web.results.length > 0) {
+      let results = `🔍 Search results for "${query}":\n\n`;
+
+      data.web.results.slice(0, 5).forEach((result: any, idx: number) => {
+        results += `${idx + 1}. **${result.title}**\n`;
+        results += `   ${result.description}\n`;
+        results += `   Source: ${result.url}\n\n`;
+      });
+
+      return results + `\n✓ Found ${data.web.results.length} results via Brave Search`;
     } else {
-      return `No detailed results found for "${query}". Try a more specific search query.`;
+      return `No results found for "${query}" via Brave Search.`;
     }
   } catch (error) {
-    return `Web search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    throw new Error(`Brave Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function tavilySearch(query: string): Promise<string> {
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query: query,
+        search_depth: 'basic',
+        max_results: 5,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.results && data.results.length > 0) {
+      let results = `🔍 Search results for "${query}":\n\n`;
+
+      data.results.forEach((result: any, idx: number) => {
+        results += `${idx + 1}. **${result.title}**\n`;
+        results += `   ${result.content}\n`;
+        results += `   Source: ${result.url}\n`;
+        if (result.score) results += `   Relevance: ${(result.score * 100).toFixed(0)}%\n`;
+        results += `\n`;
+      });
+
+      return results + `\n✓ Found ${data.results.length} results via Tavily AI`;
+    } else {
+      return `No results found for "${query}" via Tavily.`;
+    }
+  } catch (error) {
+    throw new Error(`Tavily Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function duckDuckGoSearch(query: string): Promise<string> {
+  try {
+    // Use DuckDuckGo HTML search and parse results
+    const response = await fetch(
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+    );
+    const html = await response.text();
+
+    // Basic HTML parsing to extract search results
+    const results: string[] = [];
+    const resultRegex = /<a class="result__a"[^>]*>([^<]+)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([^<]+)<\/a>/g;
+
+    let match;
+    let count = 0;
+    while ((match = resultRegex.exec(html)) && count < 5) {
+      const title = match[1].trim();
+      const snippet = match[2].trim();
+      results.push(`${count + 1}. **${title}**\n   ${snippet}`);
+      count++;
+    }
+
+    if (results.length > 0) {
+      return `🔍 Search results for "${query}":\n\n${results.join('\n\n')}\n\n✓ Found ${results.length} results via DuckDuckGo\n\n💡 For better results, add BRAVE_SEARCH_API_KEY to your .env.local file.`;
+    } else {
+      return `⚠️ Limited results for "${query}". DuckDuckGo HTML parsing may be blocked.\n\n**To improve search quality:**\n1. Add BRAVE_SEARCH_API_KEY to .env.local (Free tier: 2000 queries/month)\n   Get yours at: https://brave.com/search/api/\n\n2. Or add TAVILY_API_KEY (Free tier: 1000 queries/month)\n   Get yours at: https://tavily.com/\n\nUsing multi_web_search may provide better results.`;
+    }
+  } catch (error) {
+    return `DuckDuckGo search error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+async function multiWebSearch(topic: string, aspects?: string[]): Promise<string> {
+  try {
+    const queries = [];
+
+    // Generate diverse search queries
+    queries.push(topic);
+
+    if (aspects && aspects.length > 0) {
+      // Add aspect-specific queries
+      for (const aspect of aspects.slice(0, 3)) {
+        queries.push(`${topic} ${aspect}`);
+      }
+    } else {
+      // Default research aspects
+      queries.push(`${topic} statistics data`);
+      queries.push(`${topic} market trends`);
+      queries.push(`${topic} industry report`);
+    }
+
+    const results: string[] = [];
+
+    for (const query of queries.slice(0, 4)) {
+      try {
+        // Try DuckDuckGo
+        const ddgResponse = await fetch(
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
+        );
+        const ddgData = await ddgResponse.json();
+
+        if (ddgData.AbstractText) {
+          results.push(`**Query: "${query}"**\n${ddgData.AbstractText}\nSource: ${ddgData.AbstractURL || 'DuckDuckGo'}`);
+        } else if (ddgData.RelatedTopics && ddgData.RelatedTopics.length > 0) {
+          const topics = ddgData.RelatedTopics
+            .slice(0, 2)
+            .map((t: any) => t.Text)
+            .filter(Boolean)
+            .join('\n• ');
+          if (topics) {
+            results.push(`**Query: "${query}"**\n• ${topics}`);
+          }
+        }
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        console.error(`Search failed for "${query}":`, error);
+      }
+    }
+
+    if (results.length === 0) {
+      return `Multi-search for "${topic}" completed, but no specific data found. Consider:\n\n1. Using scrape_website with specific industry report URLs\n2. Using fetch_url to get data from known industry sources\n3. Breaking down the topic into more specific search terms\n\nSuggested URLs to try:\n• https://www.ibisworld.com (industry reports)\n• https://www.statista.com (market statistics)\n• Local chamber of commerce websites`;
+    }
+
+    return `🔍 COMPREHENSIVE RESEARCH: "${topic}"\n\n${results.join('\n\n---\n\n')}\n\n📊 Found ${results.length} relevant data points from ${queries.length} search queries.`;
+  } catch (error) {
+    return `Multi-search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+async function scrapeWebsite(url: string, extract: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return `Failed to access ${url}: HTTP ${response.status}`;
+    }
+
+    const html = await response.text();
+
+    switch (extract) {
+      case 'text':
+        // Extract text content (remove HTML tags)
+        const text = html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const preview = text.slice(0, 2000);
+        return `📄 WEBSITE CONTENT: ${url}\n\n${preview}${text.length > 2000 ? '\n\n... (truncated, total: ' + text.length + ' chars)' : ''}\n\n✓ Content extracted successfully`;
+
+      case 'links':
+        // Extract all links
+        const linkRegex = /href=["']([^"']+)["']/g;
+        const links = new Set<string>();
+        let match;
+
+        while ((match = linkRegex.exec(html)) !== null) {
+          const link = match[1];
+          if (link.startsWith('http') || link.startsWith('https')) {
+            links.add(link);
+          }
+        }
+
+        const linkList = Array.from(links).slice(0, 20);
+        return `🔗 EXTRACTED LINKS from ${url}:\n\n${linkList.map((l, i) => `${i + 1}. ${l}`).join('\n')}\n\n✓ Found ${links.size} total links (showing first 20)`;
+
+      case 'data':
+        // Try to extract structured data (tables, lists)
+        const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+        const tables = html.match(tableRegex);
+
+        if (tables && tables.length > 0) {
+          return `📊 STRUCTURED DATA from ${url}:\n\nFound ${tables.length} table(s). Use fetch_url for detailed parsing.\n\n✓ Structured content detected`;
+        } else {
+          return `📊 No obvious structured data (tables) found in ${url}. Try 'text' extraction mode instead.`;
+        }
+
+      default:
+        return `Unknown extraction mode: ${extract}. Use 'text', 'links', or 'data'.`;
+    }
+  } catch (error) {
+    return `Failed to scrape website: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+async function industryResearch(industry: string, location?: string, focus?: string): Promise<string> {
+  try {
+    const locationPart = location ? ` in ${location}` : '';
+    const queries: string[] = [];
+
+    // Build research queries based on focus
+    switch (focus) {
+      case 'market_size':
+        queries.push(`${industry} market size${locationPart}`);
+        queries.push(`${industry} revenue statistics${locationPart}`);
+        break;
+
+      case 'trends':
+        queries.push(`${industry} trends 2024${locationPart}`);
+        queries.push(`${industry} growth forecast${locationPart}`);
+        break;
+
+      case 'competitors':
+        queries.push(`top ${industry} companies${locationPart}`);
+        queries.push(`${industry} competitive landscape${locationPart}`);
+        break;
+
+      case 'pricing':
+        queries.push(`${industry} pricing${locationPart}`);
+        queries.push(`average cost ${industry}${locationPart}`);
+        break;
+
+      default: // 'all' or undefined
+        queries.push(`${industry} market size${locationPart}`);
+        queries.push(`${industry} trends${locationPart}`);
+        queries.push(`${industry} statistics${locationPart}`);
+        queries.push(`number of ${industry} businesses${locationPart}`);
+    }
+
+    const findings: string[] = [];
+
+    for (const query of queries) {
+      try {
+        const response = await fetch(
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`
+        );
+        const data = await response.json();
+
+        if (data.AbstractText) {
+          findings.push(`**${query}:**\n${data.AbstractText}`);
+        } else if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+          const info = data.RelatedTopics
+            .slice(0, 2)
+            .map((t: any) => t.Text)
+            .filter(Boolean);
+          if (info.length > 0) {
+            findings.push(`**${query}:**\n• ${info.join('\n• ')}`);
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        console.error(`Research query failed: ${query}`, error);
+      }
+    }
+
+    if (findings.length === 0) {
+      const localDataSection = location
+        ? `   • ${location} Chamber of Commerce
+   • ${location} Business Journal
+   • Local economic development office`
+        : `   • Chamber of Commerce
+   • Industry associations`;
+
+      return `📊 INDUSTRY RESEARCH: ${industry}${locationPart}
+
+No specific data found through automated search. Recommended next steps:
+
+1. **Government Sources:**
+   • Census Bureau (census.gov) for demographic data
+   • Small Business Administration (sba.gov) for industry profiles
+   • Bureau of Labor Statistics (bls.gov) for employment data
+
+2. **Industry Reports:**
+   • IBISWorld industry reports
+   • Statista market research
+   • Trade associations for ${industry}
+
+3. **Local Data:**
+${localDataSection}
+
+4. **Use these tools:**
+   • scrape_website with specific report URLs
+   • fetch_url for government data APIs
+   • web_search with very specific queries (e.g., "number of pet grooming businesses Houston 2024")`;
+    }
+
+    const focusLine = focus ? `Focus: ${focus}\n` : '';
+
+    return `📊 INDUSTRY RESEARCH: ${industry}${locationPart}
+${focusLine}${findings.join('\n\n---\n\n')}
+
+✓ Research complete. ${findings.length} data points found.
+
+**Next steps for deeper research:**
+• Use scrape_website on industry report URLs
+• Search for local business directories
+• Check government economic data sources`;
+  } catch (error) {
+    return `Industry research failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
@@ -581,4 +1150,210 @@ ${names.length > 0 ? `👤 Potential Names:\n${names.slice(0, 3).map((n) => `  -
   } catch (error) {
     return `Failed to parse contact info: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
+}
+
+async function createSubAgent(
+  role: string,
+  task: string,
+  additionalContext?: string,
+  context?: { company?: any; agentName?: string; customToolsArray?: any[] }
+): Promise<string> {
+  try {
+    // Create a temporary agent with the specified role
+    const subAgent = {
+      id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'agentNode',
+      data: {
+        name: role,
+        description: `Temporary specialized agent for: ${task}`,
+        instructions: `You are a ${role}. Use the available tools (web_search, industry_research, multi_web_search, etc.) to conduct thorough research and provide specific, actionable findings. Do NOT use placeholder text like [INDUSTRY] or [X] - provide actual data and insights.`,
+        toolsEnabled: true, // Enable tools so sub-agent can use web_search, etc.
+      },
+    };
+
+    // Build the prompt for the sub-agent
+    let fullTask = task;
+    if (additionalContext) {
+      fullTask += `\n\nAdditional Context:\n${additionalContext}`;
+    }
+
+    // Call execute API to run the sub-agent
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: fullTask,
+        agent: subAgent,
+        workflowName: role,
+        customTools: context?.customToolsArray || [],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to execute sub-agent: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response stream available');
+    }
+
+    let fullOutput = '';
+    const decoder = new TextDecoder();
+
+    // Read the stream
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'result') {
+              fullOutput = data.result.output;
+            }
+          } catch (e) {
+            // Skip malformed JSON
+          }
+        }
+      }
+    }
+
+    return `[${role.toUpperCase()}]
+
+${fullOutput}
+
+---
+✓ Sub-agent completed task`;
+  } catch (error) {
+    return `Sub-agent creation error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+function generateCode(description: string, language: string): string {
+  const examples: Record<string, string> = {
+    python: `# ${description}\n\ndef main():\n    # Implementation here\n    pass\n\nif __name__ == "__main__":\n    main()`,
+    javascript: `// ${description}\n\nfunction main() {\n  // Implementation here\n}\n\nmain();`,
+    typescript: `// ${description}\n\nfunction main(): void {\n  // Implementation here\n}\n\nmain();`,
+    sql: `-- ${description}\n\nSELECT *\nFROM table_name\nWHERE condition;`,
+    bash: `#!/bin/bash\n# ${description}\n\n# Implementation here`,
+  };
+
+  const code = examples[language.toLowerCase()] || `// ${description}\n// Code for ${language}`;
+
+  return `\`\`\`${language}\n${code}\n\`\`\`\n\n✓ Generated ${language} code snippet`;
+}
+
+function analyzeSentiment(text: string): string {
+  // Simple keyword-based sentiment analysis
+  const positive = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic', 'love', 'best', 'awesome', 'happy', 'pleased'];
+  const negative = ['bad', 'terrible', 'awful', 'horrible', 'worst', 'hate', 'disappointed', 'poor', 'unfortunate', 'sad'];
+
+  const lowerText = text.toLowerCase();
+  let positiveScore = 0;
+  let negativeScore = 0;
+
+  positive.forEach(word => {
+    if (lowerText.includes(word)) positiveScore++;
+  });
+
+  negative.forEach(word => {
+    if (lowerText.includes(word)) negativeScore++;
+  });
+
+  let sentiment = 'Neutral';
+  let emoji = '😐';
+
+  if (positiveScore > negativeScore) {
+    sentiment = 'Positive';
+    emoji = '😊';
+  } else if (negativeScore > positiveScore) {
+    sentiment = 'Negative';
+    emoji = '😞';
+  }
+
+  return `${emoji} Sentiment Analysis
+
+Overall: **${sentiment}**
+Positive indicators: ${positiveScore}
+Negative indicators: ${negativeScore}
+
+Text length: ${text.length} characters
+${text.length > 500 ? '⚠️ Long text - consider analyzing in sections' : ''}`;
+}
+
+function extractKeywords(text: string, count: number): string {
+  // Simple keyword extraction based on word frequency
+  const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'can', 'this', 'that', 'these', 'those']);
+
+  const words = text.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 3 && !stopWords.has(word));
+
+  const frequency: Record<string, number> = {};
+  words.forEach(word => {
+    frequency[word] = (frequency[word] || 0) + 1;
+  });
+
+  const sorted = Object.entries(frequency)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, count);
+
+  const keywords = sorted.map(([word, freq]) => `• **${word}** (${freq}x)`).join('\n');
+
+  return `🔍 Top ${count} Keywords
+
+${keywords}
+
+Total unique words: ${Object.keys(frequency).length}
+Total words analyzed: ${words.length}`;
+}
+
+function createPresentationOutline(topic: string, duration: number, audience: string): string {
+  const slidesCount = Math.max(5, Math.floor(duration / 3));
+
+  return `📊 Presentation Outline: "${topic}"
+
+**Duration:** ${duration} minutes
+**Audience:** ${audience}
+**Estimated Slides:** ${slidesCount}
+
+---
+
+**Slide 1: Title & Introduction** (${Math.ceil(duration * 0.1)} min)
+• Topic introduction
+• Your name/credentials
+• Agenda overview
+
+**Slide 2: Problem/Context** (${Math.ceil(duration * 0.15)} min)
+• Why this topic matters
+• Current challenges
+• Audience relevance
+
+**Slide 3-${slidesCount - 2}: Main Content** (${Math.ceil(duration * 0.55)} min)
+• Key points and insights
+• Supporting data/examples
+• Visual aids and diagrams
+
+**Slide ${slidesCount - 1}: Summary** (${Math.ceil(duration * 0.1)} min)
+• Recap key takeaways
+• Main conclusions
+• Call to action
+
+**Slide ${slidesCount}: Q&A** (${Math.ceil(duration * 0.1)} min)
+• Questions from ${audience}
+• Contact information
+• Next steps
+
+---
+
+💡 **Tips for ${audience}:**
+${audience.toLowerCase().includes('executive') ? '• Keep high-level, focus on ROI\n• Use data-driven insights\n• Be concise and actionable' : ''}
+${audience.toLowerCase().includes('investor') ? '• Emphasize market opportunity\n• Show financial projections\n• Highlight competitive advantage' : ''}
+${audience.toLowerCase().includes('team') ? '• Be detailed and technical\n• Encourage collaboration\n• Include action items' : ''}`;
 }

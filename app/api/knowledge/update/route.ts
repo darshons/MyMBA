@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { resetVectorStore } from '@/lib/vectorStore';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,12 +24,16 @@ export async function POST(req: NextRequest) {
         content = updateDepartmentSection(content, departmentName, data);
         break;
 
-      case 'add_goal':
-        content = addGoalToOverview(content, data);
-        break;
-
       case 'add_learning':
         content = addLearningToDepartment(content, departmentName, data);
+        break;
+
+      case 'update_current_work':
+        content = updateCurrentWork(content, departmentName, data);
+        break;
+
+      case 'add_note':
+        content = addNote(content, data);
         break;
 
       default:
@@ -40,6 +45,10 @@ export async function POST(req: NextRequest) {
 
     // Write updated content
     writeFileSync(filePath, content, 'utf-8');
+
+    // Reset vector store so it rebuilds with new content
+    resetVectorStore();
+    console.log('Vector store reset after knowledge base update');
 
     return NextResponse.json({
       success: true,
@@ -57,11 +66,11 @@ export async function POST(req: NextRequest) {
 function updateCompanyOverview(content: string, data: any): string {
   const lines = content.split('\n');
 
-  // Find Company Overview section
-  const overviewStart = lines.findIndex(line => line.trim() === '## Company Overview');
+  // Find Company Overview section (now an H1)
+  const overviewStart = lines.findIndex(line => line.trim() === '# Company Overview');
   if (overviewStart === -1) return content;
 
-  // Find next ## section
+  // Find next ## section (first department)
   let overviewEnd = lines.length;
   for (let i = overviewStart + 1; i < lines.length; i++) {
     if (lines[i].trim().startsWith('##') && !lines[i].trim().startsWith('###')) {
@@ -70,21 +79,12 @@ function updateCompanyOverview(content: string, data: any): string {
     }
   }
 
-  // Build new overview section
+  // Build new overview section (simpler format)
   const newOverview = [
-    '## Company Overview',
-    '',
+    '# Company Overview',
     `**Industry:** ${data.industry || 'Not yet defined'}`,
     `**Mission:** ${data.mission || 'Not yet defined'}`,
-    `**Current Goals:**`,
-    ...(data.goals || ['- None set yet']).map((g: string) => typeof g === 'string' && g.startsWith('-') ? g : `- ${g}`),
-    '',
-    `**Current Problems:**`,
-    ...(data.problems || ['- None identified yet']).map((p: string) => typeof p === 'string' && p.startsWith('-') ? p : `- ${p}`),
-    '',
-    `**Last Updated:** ${new Date().toISOString().split('T')[0]}`,
-    '',
-    '---'
+    ''
   ];
 
   // Replace overview section
@@ -100,17 +100,10 @@ function addDepartmentSection(content: string, departmentName: string): string {
   }
 
   const newSection = `
-
 ## ${departmentName}
 
-### Goals
-- None set yet
-
-### Current Work
-- No active tasks
-
-### Learnings & Insights
-- Just created
+### Past work
+- No work completed yet
 
 `;
 
@@ -139,18 +132,12 @@ function updateDepartmentSection(content: string, departmentName: string, data: 
     }
   }
 
-  // Build new department section
+  // Build new department section with new structure
   const newSection = [
     `## ${departmentName}`,
     '',
-    '### Goals',
-    ...(data.goals || ['- None set yet']).map((g: string) => typeof g === 'string' && g.startsWith('-') ? g : `- ${g}`),
-    '',
-    '### Current Work',
-    ...(data.currentWork || ['- No active tasks']).map((w: string) => typeof w === 'string' && w.startsWith('-') ? w : `- ${w}`),
-    '',
-    '### Learnings & Insights',
-    ...(data.learnings || []).map((l: string) => typeof l === 'string' && l.startsWith('-') ? l : `- ${l}`),
+    '### Past work',
+    ...(data.pastWork || ['- No work completed yet']).map((w: string) => typeof w === 'string' && w.startsWith('-') ? w : `- ${w}`),
     ''
   ];
 
@@ -160,33 +147,12 @@ function updateDepartmentSection(content: string, departmentName: string, data: 
   return lines.join('\n');
 }
 
-function addGoalToOverview(content: string, goal: string): string {
-  const lines = content.split('\n');
-
-  // Find "**Current Goals:**" line
-  const goalsIndex = lines.findIndex(line => line.includes('**Current Goals:**'));
-
-  if (goalsIndex === -1) return content;
-
-  // Find the next empty line or section after goals
-  let insertIndex = goalsIndex + 1;
-  while (insertIndex < lines.length && lines[insertIndex].trim().startsWith('-')) {
-    insertIndex++;
-  }
-
-  // Remove "None set yet" if it exists
-  if (lines[goalsIndex + 1]?.includes('None set yet')) {
-    lines.splice(goalsIndex + 1, 1);
-    insertIndex = goalsIndex + 1;
-  }
-
-  // Insert new goal
-  lines.splice(insertIndex, 0, `- ${goal}`);
-
-  return lines.join('\n');
+function addLearningToDepartment(content: string, departmentName: string, learning: string): string {
+  // Learning is now added to "Past work" instead
+  return addToPastWork(content, departmentName, learning);
 }
 
-function addLearningToDepartment(content: string, departmentName: string, learning: string): string {
+function addToPastWork(content: string, departmentName: string, work: string): string {
   const lines = content.split('\n');
 
   // Find department section
@@ -195,15 +161,17 @@ function addLearningToDepartment(content: string, departmentName: string, learni
   );
 
   if (deptStart === -1) {
-    // Department doesn't exist, can't add learning
-    return content;
+    // Department doesn't exist, create it first
+    content = addDepartmentSection(content, departmentName);
+    // Re-parse lines after adding department
+    return addToPastWork(content, departmentName, work);
   }
 
-  // Find "### Learnings & Insights" section
-  let learningsIndex = -1;
+  // Find "### Past work" section
+  let pastWorkIndex = -1;
   for (let i = deptStart; i < lines.length; i++) {
-    if (lines[i].trim() === '### Learnings & Insights') {
-      learningsIndex = i;
+    if (lines[i].trim() === '### Past work') {
+      pastWorkIndex = i;
       break;
     }
     // Stop if we hit next department
@@ -212,13 +180,18 @@ function addLearningToDepartment(content: string, departmentName: string, learni
     }
   }
 
-  if (learningsIndex === -1) {
-    // Learnings section doesn't exist in this department
+  if (pastWorkIndex === -1) {
+    // Past work section doesn't exist in this department
     return content;
   }
 
-  // Find next subsection or department
-  let insertIndex = learningsIndex + 1;
+  // Remove "No work completed yet" if it exists
+  if (lines[pastWorkIndex + 1]?.includes('No work completed yet')) {
+    lines.splice(pastWorkIndex + 1, 1);
+  }
+
+  // Find insertion point (after last work item in this section)
+  let insertIndex = pastWorkIndex + 1;
   while (insertIndex < lines.length &&
          !lines[insertIndex].trim().startsWith('###') &&
          !lines[insertIndex].trim().startsWith('##')) {
@@ -231,14 +204,110 @@ function addLearningToDepartment(content: string, departmentName: string, learni
     }
   }
 
-  // Remove "Just created" if it exists
-  if (lines[learningsIndex + 1]?.includes('Just created')) {
-    lines.splice(learningsIndex + 1, 1);
-    insertIndex = learningsIndex + 1;
+  // Insert new work item (keep only most recent 10)
+  lines.splice(insertIndex, 0, `- ${work}`);
+
+  // Count work items and limit to 10
+  let workItemCount = 0;
+  for (let i = pastWorkIndex + 1; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('###') || lines[i].trim().startsWith('##')) {
+      break;
+    }
+    if (lines[i].trim().startsWith('-')) {
+      workItemCount++;
+      if (workItemCount > 10) {
+        lines.splice(i, 1);
+        i--;
+      }
+    }
   }
 
-  // Insert new learning
-  lines.splice(insertIndex, 0, `- ${learning}`);
+  return lines.join('\n');
+}
+
+function updateCurrentWork(content: string, departmentName: string, work: string): string {
+  // Current Work now maps to "Past work" in the new structure
+  return addToPastWork(content, departmentName, work);
+}
+
+function addNote(content: string, noteText: string): string {
+  const lines = content.split('\n');
+
+  // Find the Company Overview section
+  const overviewStart = lines.findIndex(line => line.trim() === '# Company Overview');
+  if (overviewStart === -1) return content;
+
+  // Find where Notes section should be (after overview, before first department)
+  let notesIndex = -1;
+  let insertAfterIndex = overviewStart;
+
+  // Look for existing Notes section or first department
+  for (let i = overviewStart + 1; i < lines.length; i++) {
+    if (lines[i].trim() === '## Notes') {
+      notesIndex = i;
+      break;
+    }
+    if (lines[i].trim().startsWith('## ') && !lines[i].trim().startsWith('###')) {
+      // Found first department, insert Notes before it
+      insertAfterIndex = i - 1;
+      break;
+    }
+    // Track end of overview section
+    if (lines[i].trim() !== '' && !lines[i].trim().startsWith('**')) {
+      insertAfterIndex = i - 1;
+    } else if (lines[i].trim().startsWith('**')) {
+      insertAfterIndex = i;
+    }
+  }
+
+  if (notesIndex === -1) {
+    // Notes section doesn't exist, create it
+    const notesSection = [
+      '',
+      '## Notes',
+      '',
+      `- ${noteText}`,
+      ''
+    ];
+    lines.splice(insertAfterIndex + 1, 0, ...notesSection);
+  } else {
+    // Notes section exists, add note to it
+    // Find insertion point after last note
+    let insertIndex = notesIndex + 1;
+
+    // Skip empty lines after "## Notes"
+    while (insertIndex < lines.length && lines[insertIndex].trim() === '') {
+      insertIndex++;
+    }
+
+    // Find end of notes section
+    while (insertIndex < lines.length &&
+           !lines[insertIndex].trim().startsWith('##')) {
+      if (lines[insertIndex].trim().startsWith('-')) {
+        insertIndex++;
+      } else if (lines[insertIndex].trim() === '') {
+        break;
+      } else {
+        break;
+      }
+    }
+
+    // Insert new note
+    lines.splice(insertIndex, 0, `- ${noteText}`);
+
+    // Limit to 20 most recent notes
+    let noteCount = 0;
+    for (let i = notesIndex + 1; i < lines.length; i++) {
+      if (lines[i].trim().startsWith('##')) break;
+      if (lines[i].trim().startsWith('-')) {
+        noteCount++;
+        if (noteCount > 20) {
+          lines.splice(i, 1);
+          i--;
+        }
+      }
+    }
+  }
 
   return lines.join('\n');
 }

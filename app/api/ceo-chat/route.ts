@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { searchChunks } from '@/lib/rag';
+import { resetVectorStore } from '@/lib/vectorStore';
+import { AVAILABLE_TOOLS, executeToolCall } from '@/lib/tools';
+import type { CustomToolDefinition } from '@/types/customTool';
 
 export const runtime = 'nodejs';
 
@@ -13,11 +17,19 @@ const anthropic = new Anthropic({
 function isCompanyCreationRequest(question: string): { isRequest: boolean; industry?: string; description?: string } {
   const lowerQ = question.toLowerCase();
 
+  // Only match if asking to create a NEW company (not mentioning existing company)
+  // Must have explicit creation verbs + "company" without "agent/employee" in between
+
+  // Check if this mentions agent/employee (then it's NOT company creation)
+  if (/(?:agent|employee|worker|person|hire|staff)/i.test(question)) {
+    return { isRequest: false };
+  }
+
   // Match patterns like:
   // "create a dog grooming company"
   // "build a tech company"
   // "start an e-commerce company"
-  const simplePattern = /(?:create|make|build|start)(?:\s+a|\s+an)?\s+(.+?)\s+company/i;
+  const simplePattern = /^(?:create|make|build|start|i want to (?:create|make|build|start))(?:\s+a|\s+an|\s+my)?\s+(.+?)\s+company/i;
   const simpleMatch = question.match(simplePattern);
   if (simpleMatch) {
     return {
@@ -29,10 +41,10 @@ function isCompanyCreationRequest(question: string): { isRequest: boolean; indus
 
   // Match patterns like:
   // "create company for dog grooming"
-  // "company for real estate"
+  // But NOT "create agent for my company"
   const patterns = [
-    /(?:create|make|build|start).*company.*(?:for|in|about)\s+([^.!?]+)/i,
-    /company.*(?:for|in|about)\s+([^.!?]+)/i,
+    /^(?:create|make|build|start)\s+(?:a\s+)?(?:new\s+)?company\s+(?:for|in|about)\s+([^.!?]+)/i,
+    /^i (?:want|need)\s+(?:to\s+)?(?:create|make|build|start)\s+(?:a\s+)?company/i,
   ];
 
   for (const pattern of patterns) {
@@ -40,7 +52,7 @@ function isCompanyCreationRequest(question: string): { isRequest: boolean; indus
     if (match) {
       return {
         isRequest: true,
-        industry: match[1].trim(),
+        industry: match[1]?.trim() || lowerQ,
         description: question,
       };
     }
@@ -49,15 +61,22 @@ function isCompanyCreationRequest(question: string): { isRequest: boolean; indus
   return { isRequest: false };
 }
 
-// Detect if question is requesting department creation
-function isDepartmentCreationRequest(question: string): { isRequest: boolean; description?: string } {
+// Detect if question is requesting agent/employee creation
+function isAgentCreationRequest(question: string): { isRequest: boolean; description?: string } {
   const lowerQ = question.toLowerCase();
 
   const patterns = [
-    /(?:create|make|build|add|start).*(?:a|an|new)?\s*(.+?)\s*department/i,
-    /(?:create|make|build|add).*department.*(?:for|to handle|that)\s+(.+)/i,
-    /(?:add|create).*department.*(?:called|named)\s+(.+)/i,
-    /(?:need|want).*(?:a|an)?\s*(.+?)\s*department/i,
+    // Explicit creation commands
+    /(?:create|make|build|add|hire)\s+(?:a|an|new|another)?\s*(?:agent|employee|worker|person|department)/i,
+
+    // "I want/need an agent"
+    /(?:i\s+)?(?:want|need)\s+(?:a|an|to add|to create)?\s*(?:new\s+)?(?:agent|employee)/i,
+
+    // "new agent for X"
+    /(?:new|another)\s+(?:agent|employee).*(?:for|to|that)/i,
+
+    // Starting with "agent" or "employee"
+    /^(?:agent|employee)\s+(?:for|to handle|that)/i,
   ];
 
   for (const pattern of patterns) {
@@ -71,6 +90,20 @@ function isDepartmentCreationRequest(question: string): { isRequest: boolean; de
   }
 
   return { isRequest: false };
+}
+
+// Detect if question is requesting task generation
+function isTaskGenerationRequest(question: string): boolean {
+  const lowerQ = question.toLowerCase();
+
+  const patterns = [
+    /(?:generate|create|make).*tasks?.*(?:for|from).*(?:employees?|agents?|departments?|company)/i,
+    /(?:come up with|suggest|propose).*tasks?.*(?:for|from).*(?:employees?|agents?|departments?)/i,
+    /(?:what|which).*tasks?.*(?:should|can|need).*(?:employees?|agents?|departments?)/i,
+    /(?:employees?|agents?|departments?).*(?:need|should|can).*(?:do|work on|tasks?)/i,
+  ];
+
+  return patterns.some(pattern => pattern.test(lowerQ));
 }
 
 // Detect if this is a task to be executed (vs a question)
@@ -164,7 +197,7 @@ function splitIntoTasks(message: string): string[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const { question, executions, company } = await request.json();
+    const { question, executions, company, customTools } = await request.json();
 
     if (!question || !question.trim()) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 });
@@ -177,22 +210,25 @@ export async function POST(request: NextRequest) {
         type: 'company_creation',
         industry: creationCheck.industry,
         description: creationCheck.description,
-        response: `I'll help you create a ${creationCheck.industry} company. Let me generate the department structure...`
+        response: `I'll help you create a ${creationCheck.industry} company. Let me generate your team structure...`
       });
     }
 
-    // Check if this is a department creation request
-    const departmentCheck = isDepartmentCreationRequest(question);
-    if (departmentCheck.isRequest) {
-      if (!company) {
-        return NextResponse.json({
-          response: 'You need to create a company first before adding departments. Try saying "Create a company for [industry]".'
-        });
-      }
+    // Check if this is an agent creation request
+    const agentCheck = isAgentCreationRequest(question);
+    if (agentCheck.isRequest) {
       return NextResponse.json({
-        type: 'department_creation',
-        description: departmentCheck.description,
-        response: `I'll help you create that department. Let me design the employees and workflow...`
+        type: 'agent_creation',
+        description: agentCheck.description,
+        response: `I'll help you create that agent. Let me design their role and responsibilities...`
+      });
+    }
+
+    // Check if this is a task generation request
+    if (isTaskGenerationRequest(question)) {
+      return NextResponse.json({
+        type: 'task_generation',
+        response: `I'll analyze the company document and generate tasks for all employees...`
       });
     }
 
@@ -245,13 +281,64 @@ export async function POST(request: NextRequest) {
     if (company) {
       contextText = `You are the CEO of "${company.name}", a ${company.industry} company.\n\n`;
 
-      // Read company.md for detailed context
+      // Use RAG to find relevant company knowledge based on the question
       try {
-        const filePath = join(process.cwd(), 'public', 'company.md');
-        const companyDoc = readFileSync(filePath, 'utf-8');
-        contextText += `=== COMPANY KNOWLEDGE BASE ===\n${companyDoc}\n\n=== END KNOWLEDGE BASE ===\n\n`;
+        // Check if this is a status/summary question
+        const isStatusQuery = /what.*done|progress|status|summar|completed|accomplish/i.test(question);
+
+        // Check if this is asking about notes
+        const isNotesQuery = /note|sticky|idea|wrote|written|jot/i.test(question);
+
+        let relevantChunks = searchChunks(question, {
+          limit: isStatusQuery ? 10 : 5,
+          threshold: isStatusQuery ? 0.01 : 0.05, // Very low threshold for status queries
+        });
+
+        // For status queries, also explicitly fetch "learning" type chunks (Past work)
+        if (isStatusQuery && relevantChunks.length < 5) {
+          const pastWorkChunks = searchChunks('past work completed tasks', {
+            type: 'learning',
+            limit: 10,
+            threshold: 0.01,
+          });
+          // Merge and deduplicate
+          const existingIds = new Set(relevantChunks.map(c => c.id));
+          pastWorkChunks.forEach(chunk => {
+            if (!existingIds.has(chunk.id)) {
+              relevantChunks.push(chunk);
+            }
+          });
+        }
+
+        // For notes queries, explicitly fetch all note chunks
+        if (isNotesQuery) {
+          const noteChunks = searchChunks('notes sticky ideas', {
+            type: 'note',
+            limit: 20,
+            threshold: 0.01,
+          });
+          // Merge and deduplicate
+          const existingIds = new Set(relevantChunks.map(c => c.id));
+          noteChunks.forEach(chunk => {
+            if (!existingIds.has(chunk.id)) {
+              relevantChunks.push(chunk);
+            }
+          });
+        }
+
+        if (relevantChunks.length > 0) {
+          contextText += `=== RELEVANT COMPANY KNOWLEDGE ===\n`;
+          relevantChunks.forEach((chunk, idx) => {
+            contextText += `\n[${idx + 1}] ${chunk.metadata.section}`;
+            if (chunk.metadata.department) {
+              contextText += ` - ${chunk.metadata.department}`;
+            }
+            contextText += ` (${chunk.metadata.type}):\n${chunk.content}\n`;
+          });
+          contextText += `\n=== END KNOWLEDGE ===\n\n`;
+        }
       } catch (error) {
-        console.error('Failed to read company.md:', error);
+        console.error('Failed to search company knowledge:', error);
       }
 
       contextText += `Departments:\n`;
@@ -270,9 +357,9 @@ export async function POST(request: NextRequest) {
       contextText += '\n';
     }
 
-    // Build context from executions
+    // Build context from executions (recent session data)
     if (executions && executions.length > 0) {
-      contextText += `Work history:\n\n`;
+      contextText += `Recent work history from this session:\n\n`;
 
       executions.slice(0, 10).forEach((exec: any, idx: number) => {
         contextText += `${idx + 1}. ${exec.workflowName}\n`;
@@ -293,51 +380,146 @@ export async function POST(request: NextRequest) {
 
         contextText += `\n`;
       });
-    } else {
-      if (!company) {
-        contextText += 'No company has been created yet. You can ask me to create one!';
-      } else {
-        contextText += 'No work has been done yet. The company is just getting started!';
-      }
     }
+
+    // Note: Full work history is available in the RELEVANT COMPANY KNOWLEDGE section above
+    contextText += `\nNote: Complete work history for all departments is available in the company knowledge base above.\n`;
 
     const prompt = `You are an executive assistant for a CEO managing an AI company. The CEO has departments made of AI agents that complete tasks.
 
+IMPORTANT CONSTRAINTS:
+- ONLY use information from the context provided below
+- DO NOT make assumptions about time of day, dates, or any information not in the context
+- DO NOT make up or hallucinate information
+- If you don't have information to answer a question, say "I don't have that information in the company knowledge base"
+- Base ALL responses on: RAG knowledge base (especially "Past work" sections and "Notes"), work history, and visible agents/departments
+- The "RELEVANT COMPANY KNOWLEDGE" section contains the actual work completed by departments and notes from sticky notes - USE THIS as your primary source
+
+AVAILABLE CONTEXT:
 ${contextText}
 
 CEO's question: "${question}"
 
 You can help the CEO with:
-- Analyzing the company knowledge base to understand goals, problems, and current work
-- Identifying what needs to be done based on company goals and department work
+- Summarizing work completed by departments (found in "Past work" sections of company knowledge)
+- Referencing notes and ideas (found in "Notes" section - these come from sticky notes on the canvas)
+- Analyzing department activity and productivity
 - Information about departments and their agents
 - Reviewing work history and performance
-- Suggesting improvements and next steps
+- Suggesting improvements and next steps based ONLY on provided context
 - Answering questions about the company structure
 
-When the CEO asks "What do I need to do?" or similar questions:
-1. Review the company's Current Goals and Current Problems from the knowledge base
-2. Check each department's Current Work and Learnings & Insights
-3. Identify gaps or areas that need attention
-4. Provide a clear, actionable summary organized by department
-5. Suggest specific tasks that would help achieve goals or solve problems
+When the CEO asks "What has been done?" or "Summarize progress":
+1. Check the RELEVANT COMPANY KNOWLEDGE section for each department's "Past work"
+2. Summarize what each department has accomplished based on their Past work entries
+3. If a department has "No work completed yet", state that clearly
+4. Provide a department-by-department summary
+
+When the CEO asks about notes, ideas, or references sticky notes:
+1. Check the RELEVANT COMPANY KNOWLEDGE section for "Notes" entries
+2. These notes come from sticky notes placed on the workflow canvas
+3. Summarize relevant notes that match the CEO's question
 
 If the CEO wants to modify departments (add/remove employees, create subdepartments, etc.), acknowledge their request and let them know they can use natural language to make changes.
 
-Provide a helpful, concise response as the CEO's assistant. Be professional but friendly.`;
+Provide a helpful, concise response. Be professional and factual. Never greet with time-specific phrases (like "good morning/afternoon/evening") - you don't know what time it is.
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',
-      max_tokens: 2048,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
+You have access to various tools to help answer questions. Use web_search, multi_web_search, industry_research, and other tools as needed to provide accurate, up-to-date information.`;
 
-    const response = message.content[0].type === 'text' ? message.content[0].text : 'I apologize, I could not generate a response.';
+    // Build tool map (built-in + custom tools)
+    const sanitizedCustomTools = (customTools || []).map((tool: CustomToolDefinition) => ({
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      endpoint: tool.endpoint,
+      authHeader: tool.authHeader,
+      inputSchema: tool.inputSchema,
+    }));
+
+    const { toolDefinitions: customToolDefs, toolMap } = buildCustomToolDefinitions(sanitizedCustomTools);
+    const allTools = [...AVAILABLE_TOOLS, ...customToolDefs];
+
+    // Use tool calling loop
+    const messages: Anthropic.MessageParam[] = [
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ];
+
+    let finalResponse = '';
+    let turnCount = 0;
+    const maxTurns = 10;
+
+    while (turnCount < maxTurns) {
+      const message = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages,
+        tools: allTools as any[],
+      });
+
+      // Check if we got a text response
+      const textBlock = message.content.find(block => block.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        finalResponse = textBlock.text;
+      }
+
+      // Check if there are tool uses
+      const toolUses = message.content.filter(block => block.type === 'tool_use');
+
+      if (toolUses.length === 0) {
+        // No more tool uses, we're done
+        break;
+      }
+
+      // Add assistant message to conversation
+      messages.push({
+        role: 'assistant',
+        content: message.content,
+      });
+
+      // Execute all tool calls
+      const toolResults = await Promise.all(
+        toolUses.map(async (toolUse: any) => {
+          try {
+            const result = await executeToolCall(
+              toolUse.name,
+              toolUse.input,
+              toolMap,
+              {
+                company,
+                agentName: 'CEO Assistant',
+                customToolsArray: sanitizedCustomTools,
+              }
+            );
+
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: result,
+            };
+          } catch (error) {
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              is_error: true,
+            };
+          }
+        })
+      );
+
+      // Add tool results to conversation
+      messages.push({
+        role: 'user',
+        content: toolResults,
+      });
+
+      turnCount++;
+    }
+
+    const response = finalResponse || 'I apologize, I could not generate a response.';
 
     // Extract and update knowledge base from conversation
     try {
@@ -367,20 +549,14 @@ CEO Question: "${question}"
 Assistant Response: "${response}"
 
 Extract (if mentioned):
-1. New goals or objectives
-2. Current problems or challenges
-3. Important insights or decisions
-4. Changes to company mission or strategy
+- Changes to company mission or strategy
 
 Respond in JSON format:
 {
-  "goals": ["list of new goals mentioned"],
-  "problems": ["list of problems identified"],
-  "insights": ["list of key insights or decisions"],
   "mission": "new mission if mentioned, otherwise null"
 }
 
-If nothing important was mentioned, return empty arrays.`;
+If nothing important was mentioned, return null mission.`;
 
   const analysisMessage = await anthropic.messages.create({
     model: 'claude-3-haiku-20240307',
@@ -404,77 +580,16 @@ If nothing important was mentioned, return empty arrays.`;
   // Update company.md
   const filePath = join(process.cwd(), 'public', 'company.md');
   let content = readFileSync(filePath, 'utf-8');
-  let updated = false;
-
-  // Add new goals
-  if (extracted.goals && extracted.goals.length > 0) {
-    for (const goal of extracted.goals) {
-      content = addGoalToOverview(content, goal);
-      updated = true;
-    }
-  }
-
-  // Add new problems
-  if (extracted.problems && extracted.problems.length > 0) {
-    for (const problem of extracted.problems) {
-      content = addProblemToOverview(content, problem);
-      updated = true;
-    }
-  }
 
   // Update mission if mentioned
   if (extracted.mission) {
     content = updateMission(content, extracted.mission);
-    updated = true;
-  }
-
-  // Save if any updates were made
-  if (updated) {
-    // Update last updated date
-    content = content.replace(
-      /\*\*Last Updated:\*\* .+/,
-      `**Last Updated:** ${new Date().toISOString().split('T')[0]}`
-    );
     writeFileSync(filePath, content, 'utf-8');
+
+    // Reset vector store so RAG picks up the new information
+    resetVectorStore();
+    console.log('Knowledge base updated from chat conversation');
   }
-}
-
-function addGoalToOverview(content: string, goal: string): string {
-  const lines = content.split('\n');
-  const goalsIndex = lines.findIndex(line => line.includes('**Current Goals:**'));
-  if (goalsIndex === -1) return content;
-
-  let insertIndex = goalsIndex + 1;
-  while (insertIndex < lines.length && lines[insertIndex].trim().startsWith('-')) {
-    insertIndex++;
-  }
-
-  if (lines[goalsIndex + 1]?.includes('None set yet')) {
-    lines.splice(goalsIndex + 1, 1);
-    insertIndex = goalsIndex + 1;
-  }
-
-  lines.splice(insertIndex, 0, `- ${goal}`);
-  return lines.join('\n');
-}
-
-function addProblemToOverview(content: string, problem: string): string {
-  const lines = content.split('\n');
-  const problemsIndex = lines.findIndex(line => line.includes('**Current Problems:**'));
-  if (problemsIndex === -1) return content;
-
-  let insertIndex = problemsIndex + 1;
-  while (insertIndex < lines.length && lines[insertIndex].trim().startsWith('-')) {
-    insertIndex++;
-  }
-
-  if (lines[problemsIndex + 1]?.includes('None identified yet')) {
-    lines.splice(problemsIndex + 1, 1);
-    insertIndex = problemsIndex + 1;
-  }
-
-  lines.splice(insertIndex, 0, `- ${problem}`);
-  return lines.join('\n');
 }
 
 function updateMission(content: string, mission: string): string {
@@ -482,4 +597,35 @@ function updateMission(content: string, mission: string): string {
     /\*\*Mission:\*\* .+/,
     `**Mission:** ${mission}`
   );
+}
+
+function buildCustomToolDefinitions(customTools: CustomToolDefinition[]) {
+  const definitions: any[] = [];
+  const toolMap = new Map<string, CustomToolDefinition>();
+
+  customTools.forEach(tool => {
+    const toolName = `custom_tool_${tool.id}`;
+    toolMap.set(toolName, tool);
+
+    definitions.push({
+      name: toolName,
+      description: `${tool.description} (User-defined tool)`,
+      input_schema: {
+        type: 'object',
+        properties: {
+          input: {
+            type: 'string',
+            description: 'Primary input or payload for this tool',
+          },
+          context: {
+            type: 'string',
+            description: 'Optional additional context or metadata',
+          },
+        },
+        required: ['input'],
+      },
+    });
+  });
+
+  return { toolDefinitions: definitions, toolMap };
 }
