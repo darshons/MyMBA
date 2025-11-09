@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
             // Find tool use blocks
             const toolUseBlock = message.content.find(
               (block: any) => block.type === 'tool_use'
-            );
+            ) as any;
 
             if (!toolUseBlock) break;
 
