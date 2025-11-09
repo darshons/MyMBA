@@ -8,7 +8,7 @@ import FeedbackModal from './FeedbackModal';
 import { getStoredCustomTools } from '@/lib/customToolStorage';
 
 export default function ExecutionPanel() {
-  const { nodes, edges, execution, startExecution, currentWorkflowName, updateDepartmentNodeStatus } = useFlowStore();
+  const { nodes, edges, execution, startExecution, currentWorkflowName } = useFlowStore();
   const [input, setInput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -90,16 +90,15 @@ export default function ExecutionPanel() {
     startExecution(input);
 
     try {
-      // Check if we're in company view (departments) or department view (employees)
+      // Get company for context
       const company = getCurrentCompany();
-      const isCompanyView = nodes.length > 0 && nodes[0]?.type === 'departmentNode';
 
       let executionNodes = nodes;
       let executionEdges = edges;
       let departmentId: string | null = null;
 
-      // If in company view, route to appropriate department first
-      if (isCompanyView && company) {
+      // Check if we should route to a department (if multiple departments exist)
+      if (false && company) { // Disabled for now since department nodes removed
         console.log('Company view detected, routing task to department...');
         setRoutingInfo('Analyzing task and routing to appropriate department...');
 
@@ -128,24 +127,28 @@ export default function ExecutionPanel() {
         departmentId = routeResult.departmentId;
         setRoutingInfo(`Routed to ${routeResult.departmentName} department`);
 
-        // Update department node status to active
-        if (departmentId) {
-          updateDepartmentNodeStatus(departmentId, 'active');
+        // Load the department's agent for execution
+        if (!departmentId) {
+          alert('No department selected');
+          setIsExecuting(false);
+          return;
         }
 
-        // Load the department's agent for execution
-        const department = departmentId ? getDepartment(departmentId) : null;
-        if (!department || !department.agent) {
+        const department = getDepartment(departmentId as string);
+        if (!department) {
+          alert(`${routeResult.departmentName} department not found.`);
+          setIsExecuting(false);
+          return;
+        }
+
+        if (!department?.agent) {
           alert(`${routeResult.departmentName} department has no agent. Please add an agent first.`);
-          if (departmentId) {
-            updateDepartmentNodeStatus(departmentId, 'idle');
-          }
           setIsExecuting(false);
           return;
         }
 
         // For single agent execution, we don't need nodes/edges arrays
-        executionNodes = [department.agent];
+        executionNodes = [department?.agent];
         executionEdges = [];
         console.log('Executing with department agent:', department.agent.data.name);
       }
@@ -158,9 +161,6 @@ export default function ExecutionPanel() {
       );
 
       const customTools = getStoredCustomTools();
-
-      // Build company structure for sub-agent creation
-      const company = getCurrentCompany();
 
       const response = await fetch('/api/execute', {
         method: 'POST',
@@ -221,10 +221,6 @@ export default function ExecutionPanel() {
               } else if (data.type === 'complete') {
                 console.log('Workflow complete');
                 useFlowStore.getState().completeExecution();
-                // Mark department as completed if we routed to one
-                if (departmentId) {
-                  updateDepartmentNodeStatus(departmentId, 'completed');
-                }
               } else if (data.type === 'error') {
                 console.error('Agent error:', data.error);
                 alert(`Error in agent ${data.agentId}: ${data.error}`);

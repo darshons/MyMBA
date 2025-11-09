@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Extract final text output
-          const textBlock = message.content.find((block: any) => block.type === 'text');
+          const textBlock = message.content.find((block: any) => block.type === 'text') as any;
           output = textBlock ? textBlock.text : 'No response';
 
           // Send result

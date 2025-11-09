@@ -37,7 +37,7 @@ export default function AgentModal({ departmentId }: AgentModalProps = {}) {
       updateAgent(editingAgent.id, { name, instructions, toolsEnabled });
       setIsEditing(false);
     } else {
-      addAgent({ name, instructions, toolsEnabled }, departmentId);
+      addAgent({ name, instructions, toolsEnabled });
       closeModal();
     }
   };
