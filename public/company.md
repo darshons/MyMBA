@@ -141,3 +141,10 @@ Based on the comprehensive market and customer analysis conducted by the paralle
 
 1. Classify the customer comp...
 
+
+## research
+
+### Past work
+- [11/9/2025] Conduct research on apples...: No response...
+- [11/9/2025] Conduct research on apples, gathering comprehensiv...: Alright, that USApple site has a wealth of information on apple varieties, industry statistics, poli...
+

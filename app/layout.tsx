@@ -9,7 +9,7 @@ const lato = Lato({
 });
 
 export const metadata: Metadata = {
-  title: "AgentFlow - Visual AI Workflow Builder",
+  title: "MBAi - AI Business Command Center",
   description: "Create and orchestrate multi-agent AI workflows with an intuitive visual interface",
 };
 
