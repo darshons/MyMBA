@@ -97,61 +97,7 @@ export default function ExecutionPanel() {
       let executionEdges = edges;
       let departmentId: string | null = null;
 
-      // Check if we should route to a department (if multiple departments exist)
-      if (false && company) { // Disabled for now since department nodes removed
-        console.log('Company view detected, routing task to department...');
-        setRoutingInfo('Analyzing task and routing to appropriate department...');
-
-        const routeResponse = await fetch('/api/route-task', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            task: input,
-            company,
-          }),
-        });
-
-        if (!routeResponse.ok) {
-          throw new Error('Failed to route task');
-        }
-
-        const routeResult = await routeResponse.json();
-        console.log('Routing result:', routeResult);
-
-        if (!routeResult.departmentId) {
-          alert('No suitable department found for this task. Please create a relevant department first.');
-          setIsExecuting(false);
-          return;
-        }
-
-        departmentId = routeResult.departmentId;
-        setRoutingInfo(`Routed to ${routeResult.departmentName} department`);
-
-        // Load the department's agent for execution
-        if (!departmentId) {
-          alert('No department selected');
-          setIsExecuting(false);
-          return;
-        }
-
-        const department = getDepartment(departmentId as string);
-        if (!department) {
-          alert(`${routeResult.departmentName} department not found.`);
-          setIsExecuting(false);
-          return;
-        }
-
-        if (!department?.agent) {
-          alert(`${routeResult.departmentName} department has no agent. Please add an agent first.`);
-          setIsExecuting(false);
-          return;
-        }
-
-        // For single agent execution, we don't need nodes/edges arrays
-        executionNodes = [department?.agent];
-        executionEdges = [];
-        console.log('Executing with department agent:', department.agent.data.name);
-      }
+      // Department routing disabled - feature was deprecated when department nodes were removed
 
       console.log('Calling API with', executionNodes.length, 'nodes');
 

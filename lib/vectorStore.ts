@@ -149,7 +149,7 @@ export class VectorStore {
    */
   search(query: string, options?: {
     department?: string;
-    type?: 'goal' | 'problem' | 'learning' | 'general';
+    type?: 'goal' | 'problem' | 'learning' | 'general' | 'note';
     limit?: number;
     threshold?: number;
   }): DocumentChunk[] {

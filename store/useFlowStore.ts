@@ -218,7 +218,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   updateNodeStatus: (nodeId, status) => {
     set({
       nodes: get().nodes.map((node) =>
-        node.id === nodeId ? { ...node, data: { ...node.data, status } } as FlowNode : node
+        node.id === nodeId ? { ...node, data: { ...node.data, status } } as AgentNode : node
       ),
     });
   },
