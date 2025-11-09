@@ -4,10 +4,10 @@ export const runtime = 'edge';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { departmentId: string } }
+  { params }: { params: Promise<{ departmentId: string }> }
 ) {
   try {
-    const departmentId = params.departmentId;
+    const { departmentId } = await params;
     const body = await request.json();
 
     // Extract input from webhook payload
@@ -43,17 +43,18 @@ export async function POST(
 // GET endpoint to show webhook info
 export async function GET(
   request: NextRequest,
-  { params }: { params: { departmentId: string } }
+  { params }: { params: Promise<{ departmentId: string }> }
 ) {
+  const { departmentId } = await params;
   return NextResponse.json({
-    departmentId: params.departmentId,
-    webhookUrl: `${request.nextUrl.origin}/api/webhooks/${params.departmentId}`,
+    departmentId,
+    webhookUrl: `${request.nextUrl.origin}/api/webhooks/${departmentId}`,
     method: 'POST',
     contentType: 'application/json',
     example: {
       input: 'Your task or data here'
     },
-    curlExample: `curl -X POST ${request.nextUrl.origin}/api/webhooks/${params.departmentId} \\
+    curlExample: `curl -X POST ${request.nextUrl.origin}/api/webhooks/${departmentId} \\
   -H "Content-Type: application/json" \\
   -d '{"input": "Process this lead: John Doe from Acme Corp"}'`
   });
