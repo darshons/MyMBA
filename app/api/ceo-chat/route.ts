@@ -286,9 +286,6 @@ export async function POST(request: NextRequest) {
         // Check if this is a status/summary question
         const isStatusQuery = /what.*done|progress|status|summar|completed|accomplish/i.test(question);
 
-        // Check if this is asking about notes
-        const isNotesQuery = /note|sticky|idea|wrote|written|jot/i.test(question);
-
         let relevantChunks = searchChunks(question, {
           limit: isStatusQuery ? 10 : 5,
           threshold: isStatusQuery ? 0.01 : 0.05, // Very low threshold for status queries
@@ -304,22 +301,6 @@ export async function POST(request: NextRequest) {
           // Merge and deduplicate
           const existingIds = new Set(relevantChunks.map(c => c.id));
           pastWorkChunks.forEach(chunk => {
-            if (!existingIds.has(chunk.id)) {
-              relevantChunks.push(chunk);
-            }
-          });
-        }
-
-        // For notes queries, explicitly fetch all note chunks
-        if (isNotesQuery) {
-          const noteChunks = searchChunks('notes sticky ideas', {
-            type: 'note',
-            limit: 20,
-            threshold: 0.01,
-          });
-          // Merge and deduplicate
-          const existingIds = new Set(relevantChunks.map(c => c.id));
-          noteChunks.forEach(chunk => {
             if (!existingIds.has(chunk.id)) {
               relevantChunks.push(chunk);
             }
@@ -392,8 +373,8 @@ IMPORTANT CONSTRAINTS:
 - DO NOT make assumptions about time of day, dates, or any information not in the context
 - DO NOT make up or hallucinate information
 - If you don't have information to answer a question, say "I don't have that information in the company knowledge base"
-- Base ALL responses on: RAG knowledge base (especially "Past work" sections and "Notes"), work history, and visible agents/departments
-- The "RELEVANT COMPANY KNOWLEDGE" section contains the actual work completed by departments and notes from sticky notes - USE THIS as your primary source
+- Base ALL responses on: RAG knowledge base (especially "Past work" sections), work history, and visible agents/departments
+- The "RELEVANT COMPANY KNOWLEDGE" section contains the actual work completed by departments - USE THIS as your primary source
 
 AVAILABLE CONTEXT:
 ${contextText}
@@ -402,7 +383,6 @@ CEO's question: "${question}"
 
 You can help the CEO with:
 - Summarizing work completed by departments (found in "Past work" sections of company knowledge)
-- Referencing notes and ideas (found in "Notes" section - these come from sticky notes on the canvas)
 - Analyzing department activity and productivity
 - Information about departments and their agents
 - Reviewing work history and performance
@@ -414,11 +394,6 @@ When the CEO asks "What has been done?" or "Summarize progress":
 2. Summarize what each department has accomplished based on their Past work entries
 3. If a department has "No work completed yet", state that clearly
 4. Provide a department-by-department summary
-
-When the CEO asks about notes, ideas, or references sticky notes:
-1. Check the RELEVANT COMPANY KNOWLEDGE section for "Notes" entries
-2. These notes come from sticky notes placed on the workflow canvas
-3. Summarize relevant notes that match the CEO's question
 
 If the CEO wants to modify departments (add/remove employees, create subdepartments, etc.), acknowledge their request and let them know they can use natural language to make changes.
 

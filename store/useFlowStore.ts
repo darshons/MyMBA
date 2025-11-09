@@ -129,20 +129,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         node.id === id ? { ...node, data: { ...node.data, ...data } } : node
       ),
     });
-
-    // Update company knowledge base with sticky note content
-    if (data.text && data.text.trim()) {
-      fetch('/api/knowledge/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'add_note',
-          data: data.text,
-        }),
-      }).catch(error => {
-        console.error('Failed to update knowledge base with sticky note:', error);
-      });
-    }
+    // Sticky notes are now canvas-only and don't update the knowledge base
   },
 
   deleteStickyNote: (id) => {

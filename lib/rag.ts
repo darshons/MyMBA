@@ -8,7 +8,7 @@ export interface DocumentChunk {
   metadata: {
     section: string;
     department?: string;
-    type: 'goal' | 'problem' | 'learning' | 'general' | 'note';
+    type: 'goal' | 'problem' | 'learning' | 'general';
   };
 }
 
@@ -24,7 +24,7 @@ export function chunkCompanyDocument(): DocumentChunk[] {
 
   let currentSection = 'Overview';
   let currentDepartment: string | undefined;
-  let currentType: 'goal' | 'problem' | 'learning' | 'general' | 'note' = 'general';
+  let currentType: 'goal' | 'problem' | 'learning' | 'general' = 'general';
   let currentContent: string[] = [];
   let chunkId = 0;
 
@@ -57,21 +57,13 @@ export function chunkCompanyDocument(): DocumentChunk[] {
       continue;
     }
 
-    // Detect H2 headers (Departments or Notes)
+    // Detect H2 headers (Departments)
     if (line.startsWith('## ')) {
       flushChunk();
       const sectionName = line.replace('## ', '').trim();
       currentSection = sectionName;
-
-      // Check if this is the Notes section
-      if (sectionName.toLowerCase() === 'notes') {
-        currentDepartment = undefined;
-        currentType = 'note';
-      } else {
-        // It's a department
-        currentDepartment = sectionName;
-        currentType = 'general';
-      }
+      currentDepartment = sectionName;
+      currentType = 'general';
       continue;
     }
 
@@ -109,7 +101,7 @@ export function chunkCompanyDocument(): DocumentChunk[] {
  */
 export function searchChunks(query: string, options?: {
   department?: string;
-  type?: 'goal' | 'problem' | 'learning' | 'general' | 'note';
+  type?: 'goal' | 'problem' | 'learning' | 'general';
   limit?: number;
   threshold?: number;
 }): DocumentChunk[] {
