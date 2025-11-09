@@ -432,8 +432,8 @@ You have access to various tools to help answer questions. Use web_search, multi
       name: tool.name,
       description: tool.description,
       endpoint: tool.endpoint,
-      authHeader: tool.authHeader,
-      inputSchema: tool.inputSchema,
+      authType: tool.authType,
+      authValue: tool.authValue,
     }));
 
     const { toolDefinitions: customToolDefs, toolMap } = buildCustomToolDefinitions(sanitizedCustomTools);
