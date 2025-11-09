@@ -294,11 +294,11 @@ export async function POST(request: NextRequest) {
           threshold: isStatusQuery ? 0.01 : 0.05, // Very low threshold for status queries
         });
 
-        // For status queries, also explicitly fetch "learning" type chunks (Past work)
-        if (isStatusQuery && relevantChunks.length < 5) {
-          const pastWorkChunks = searchChunks('past work completed tasks', {
+        // For status queries, ALWAYS fetch "learning" type chunks (Past work)
+        if (isStatusQuery) {
+          const pastWorkChunks = searchChunks('past work completed tasks history', {
             type: 'learning',
-            limit: 10,
+            limit: 20,
             threshold: 0.01,
           });
           // Merge and deduplicate

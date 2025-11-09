@@ -208,6 +208,32 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         status: completedExecution.status,
         createdAt: Date.now(),
       });
+
+      // Update knowledge base with completed work
+      completedExecution.results.forEach((result) => {
+        const date = new Date().toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+        const truncatedInput = result.input.length > 50
+          ? result.input.substring(0, 50) + '...'
+          : result.input;
+        const truncatedOutput = result.output.length > 200
+          ? result.output.substring(0, 200) + '...'
+          : result.output;
+
+        const workEntry = `[${date}] ${truncatedInput}: ${truncatedOutput}`;
+
+        // Update knowledge base for this agent's department
+        fetch('/api/knowledge/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'add_learning',
+            departmentName: result.agentName,
+            data: workEntry,
+          }),
+        }).catch((error) => {
+          console.error('Failed to update knowledge base with work history:', error);
+        });
+      });
     }
   },
 
